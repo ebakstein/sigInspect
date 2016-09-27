@@ -1,0 +1,14 @@
+*.asv
+*.log
+*.mat
+*.aux
+*.blg
+*.out
+*.gz(busy)
+*synctex.gz
+*.toc
+*.log
+*.fdb_latexmk
+*.bbl
+/DAO
+/tests
