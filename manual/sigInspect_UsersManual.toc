@@ -1,0 +1,29 @@
+\contentsline {section}{Overview}{1}
+\contentsline {section}{Quick start}{2}
+\contentsline {subsection}{Signal}{2}
+\contentsline {subsection}{Loading a signal - the simple way}{2}
+\contentsline {subsection}{Loading signals from a mat-file}{2}
+\contentsline {subsection}{Using the GUI}{3}
+\contentsline {subsubsection}{Basic controls}{3}
+\contentsline {subsubsection}{Channel selection}{3}
+\contentsline {subsubsection}{Audio}{3}
+\contentsline {subsubsection}{Annotation}{3}
+\contentsline {subsubsection}{Overview window}{4}
+\contentsline {subsubsection}{Keyboard shortcuts}{4}
+\contentsline {subsection}{Settings}{4}
+\contentsline {section}{Advanced data loading - sigInspectDataInterface}{4}
+\contentsline {subsection}{In OOP terms}{6}
+\contentsline {subsection}{Reference}{6}
+\contentsline {subsubsection}{getSignalIds}{6}
+\contentsline {subsubsection}{getSignalsById}{6}
+\contentsline {subsubsection}{settings}{6}
+\contentsline {subsection}{Example interface}{7}
+\contentsline {subsubsection}{Using the interface}{7}
+\contentsline {subsection}{Default interface: sigInspectDataBasic}{7}
+\contentsline {section}{Automatic artifact annotation (Beta)}{8}
+\contentsline {subsection}{Artifact types handling}{8}
+\contentsline {subsection}{Artifact classification methods}{8}
+\contentsline {subsubsection}{psd - deviation from ideal spectrum}{8}
+\contentsline {subsubsection}{Other methods}{8}
+\contentsline {section}{About + license}{9}
+\contentsline {section}{FAQ}{9}
