@@ -7,7 +7,7 @@ function [featVals featNames] = sigInspectComputeFeatures(segment, featNames, sa
 %   samplingFreq - sampling frequency for computation of
 %                  frequency-dependent features (default: segment length)
 % OUT
-%   featVals  - row vector of M values
+%   featVals  - row vector of M values (Or Nch x M matrix, where Nch is number of channels)
 %   featNames - feature identifiers (same as input or all feature names if input featNames empty)
 % 
 %  E. Bakstein 2015-06-29
@@ -57,7 +57,7 @@ end
 
 % identify NaNs
 isn=isnan(segment);
-if(sum(~isn)==0)
+if(all(sum(~isn,2)==0))
     warning('segment contains only NaNs, skipping')
     return
 end
@@ -214,15 +214,19 @@ function f = compPowDiff(seg,samplingFreq)
     for ci=1:Nc
         S = reshape(seg(ci,:),WLEN,[]);
         pow = nanmean(S.^2);
-      
-        Pwdv = pow(1:end-1)./pow(2:end); Pwdv(Pwdv<1) = 1./Pwdv(Pwdv<1);
+        if(isnan(pow))
+            continue;
+        end
+        
+        Pwdv = pow(1:end-1)./pow(2:end); 
+        Pwdv(Pwdv<1) = 1./Pwdv(Pwdv<1);
 
 %         %  multi-channel version
 %         Pwdv = pow(:,1:end-1)'./Pw(:,2:end)'; Pwdv(Pwdv<1) = 1./Pwdv(Pwdv<1);
 %         Pwdv = abs(diff(Pwdv));
 
         
-        f(ci) = max(abs(diff(Pwdv)));
+        f(ci) = max(abs(diff([1 Pwdv])));
     end
     
 % compute value of the Kolmogorov-Smirnov statistic

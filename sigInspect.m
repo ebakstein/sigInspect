@@ -71,12 +71,14 @@ handles.settings.NORMALIZE_SIGNAL_PER_CHANNEL_QUANTILE=0.1;                 % us
 
 % overview window
 handles.settings.OVERVIEW_DECIMATE_FACTOR = 20;                             % decimate signals by this factor before view in the overview window - this is multipliet with the basic DECIMATE_FACTOR
-handles.settings.OVERVIEW_GAIN = 10;                                        % increase gain in overview window (to adapt for decimation)
+handles.settings.OVERVIEW_GAIN = 5;                                         % increase gain in overview window (to adapt for decimation)
 handles.settings.OVERVIEW_ALWAYS_ON_TOP = 0;                                % keeps overview window always on top
+handles.settings.OVERVIEW_CHANNEL_COLOR = [0,0.447,0.741];                  % signal color in overview window
+handles.settings.OVERVIEW_ARTIFACT_COLOR='r';                               % color to plot artifacts (shown in overview only)
 
 % automatic artifact type buttons - TODO:
 handles.settings.ARTIFACT_TYPES={'ARTIF','UNSURE'};                         % cell array with artifact type abbreviations (max TODO types)
-handles.settings.ARTIFACT_COLOR='r';                                        % NOT IMPLEMENTED YET color to plot artifacts (shown in overview only), cycled if more artifact types than colors
+handles.settings.ARTIFACT_AUTOLABEL_WHICH=1;                                % which artifact type shall be use in sigInspectAutoLabel (just for compatibility)
 
 % spectrogram
 handles.settings.SPECTROGRAM_NFFT = 1024;                                   % points to be used in spectrogram FFT
@@ -91,7 +93,9 @@ handles.settings.SHOW_SIG_INFO = 1;                                         % sh
 handles.settings.PLOT_STEP = 150;                                           % distance on the y axis between channels
 handles.settings.PLOT_CHANNELS = 5;                                         % max. number of prallel channels to plot (max. 9)
 handles.settings.REVERSE_CHANNEL_ORDER = 1;                                 % 0: first channel at the top, last at the bottom 1: first channel at the bottom
-
+handles.settings.CHANNELS_SAME_COLOR = 0;                                   % 0: use different color for each channel (see CHANNEL_COLORS) 1: use same color for all channels (first color from CHANNEL_COLORS)
+handles.settings.CHANNEL_COLORS = {[0,0.447,0.741],...                      % cell array of channel colors in time series plot, if there are more channels than colors, colors are repeated. First color used if CHANNELS_SAME_COLOR=1
+    [0.85,0.325,0.098],[0.929,0.694,0.125],[0.494,0.184,0.556],[0.466,0.674,0.188],[0.301,0.745,0.933],[0.635,0.078,0.184]};
 
 % audio
 handles.settings.START_WITH_SOUND_ON = 0;                                   % start with sound turned on
@@ -148,10 +152,10 @@ function handles=sigInspectInit(handles, vararg)
             [fileName, pathName, fileIndex] = uigetfile('*.mat','sigInspect: Select *.mat file with signal(s)');
             filePath = [pathName fileName];
             
-            if(~ischar(fileName))
+            if(~ischar(fileName))            
                 h=errordlg(['sigInspect can not start without a signal - please select mat file with signals or provide signals or interface as an input parameter'],'can not start without signals', 'modal');
                 waitfor(h)
-                continue
+                return
             end
             
             try
@@ -253,6 +257,19 @@ function handles=sigInspectInit(handles, vararg)
     handles.curSigInfo=''; % current signal info, provided by interface
     handles.spectroWholePatch=[]; % handle to second-showing patch in whole spectrogram
     
+    % color settings
+    if(isempty(handles.settings.CHANNEL_COLORS) || ~iscell(handles.settings.CHANNEL_COLORS))
+        warning('Invalid color format in handles.settings.CHANNEL_COLORS. Should be a nonempty cell array of color specifiers compatible with plot function (RGB triples or character shortcuts). Using default (blue)')
+        handles.settings.CHANNEL_COLORS = {[0,0.447,0.741]};
+    end
+    if(handles.settings.CHANNELS_SAME_COLOR)
+        handles.internal.channelColors = handles.settings.CHANNEL_COLORS(1);
+    else
+        handles.internal.channelColors = handles.settings.CHANNEL_COLORS(:);
+    end
+    %           repeat for all possible channels
+    handles.internal.channelColors = repmat(handles.internal.channelColors,ceil(handles.internal.MaxChannels/length(handles.internal.channelColors)),1);
+    handles.internal.channelColors = handles.internal.channelColors(1:handles.internal.MaxChannels);
     
     % for overview window
     handles.overviewFig = []; % overview window figure handle
@@ -362,15 +379,16 @@ function handles = copySettings(handles, interface)
     if(~isempty(fld))
         for fi=1:length(fld)            
             fName=fld{fi};
-            intVal=interface.settings.(fName);
-            setVal=handles.settings.(fName);
             
             % check if settings field exists
             if(~isfield(handles.settings, fName))
                 warning('nonexistent settings field in interface: %s - skipping',fName)
                 continue;
-            end                
-
+            end
+            
+            intVal=interface.settings.(fName);
+            setVal=handles.settings.(fName);
+  
             % check if new field is not empty
             if(isempty(intVal))
                 warning('empty interface settings field: %s - skipping',fName)
@@ -501,8 +519,8 @@ function redraw(handles,adaptGainToSignal)
         % amplify
         sig = sig*get(handles.gainEdit,'Value');        
         
-        % plot
-        plot(t,sig+yShift)
+        % plot        
+        plot(t,sig+yShift,'color',handles.internal.channelColors{ci});
         
         % constant samples
         if(handles.settings.CHECK_CONST_SAMPLES)
@@ -570,14 +588,14 @@ function redrawOverview(handles, justPatch)
                    % amplify
                    sig = sig*get(handles.gainEdit,'Value')*handles.settings.OVERVIEW_GAIN;        
                    % plot
-                   plot(handles.overviewSigAxes,t,sig+yShift);
+                   plot(handles.overviewSigAxes,t,sig+yShift,'color',handles.settings.OVERVIEW_CHANNEL_COLOR);
 
                    % overplot annotation
                    plotInds = getOverviewAnnotInds(handles, ii);
                    if(any(plotInds))
                        sigTmp = sig;
                        sigTmp(~plotInds)= nan;
-                       plot(handles.overviewSigAxes,t,sigTmp+yShift,'Color',handles.settings.ARTIFACT_COLOR)
+                       plot(handles.overviewSigAxes,t,sigTmp+yShift,'Color',handles.settings.OVERVIEW_ARTIFACT_COLOR)
                    end
                 end                  
                 ylim(handles.overviewSigAxes,[0 (Nch+1)*handles.settings.PLOT_STEP]);
@@ -633,7 +651,7 @@ function plotInds = getOverviewAnnotInds(handles,chan)
     
     anT = (1:size(annot,2))-.5;
     sigT=(0:sigN-1)/handles.samplingFreqOverview;
-    plotInds = logical(interp1(anT,annot,sigT,'nearest','extrap'));
+    plotInds = logical(interp1(anT,double(annot),sigT,'nearest','extrap'));
     
 
     

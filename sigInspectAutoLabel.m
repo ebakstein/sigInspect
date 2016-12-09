@@ -1,5 +1,5 @@
-function annotation = sigInspectAutoLabel(interfSignalOrPath, pathToSave, method)
-% annot = sigInspectAutoLabel(iterfSignalOrPath, pathToSave, method...)  
+function annotation = sigInspectAutoLabel(interfSignalOrPath, pathToSave, method, varargin)
+% annot = sigInspectAutoLabel(iterfSignalOrPath, pathToSave, method, params)  
 %   label all signals from provided cell array or interface using pre-learned 
 %   classifier, return/save annot
 %
@@ -24,18 +24,23 @@ function annotation = sigInspectAutoLabel(interfSignalOrPath, pathToSave, method
 %   pathToSave - file path to save *.mat file with generated annotation
 %                to.(only if no output parameters are set
 %                default: sigInspectAutoAnnotationyyyy-mm-dd-HHMMSS.mat.
+%   params     - one or more parameters for the selected method. See
+%                sigInspectClassify for details.
+% 
 % OUT
 %   annot - annotation structure (optional)
 % 
 % E. Bakstein 2015-06-26
+% UPDATES: 20161010 - reworked, additional classifiers (tree, cov)
 % 
 
-if(nargin<2)
-    method=[]; % use default of sigInspectClassify
-end
 
 
 fprintf('----------- sigInspectAutoLabel -------------\n')
+if(nargin<3)
+    method=[]; % use default of sigInspectClassify
+    fprintf('Classification method unspecified, using psd(default)\n')
+end
 fprintf('initialization ')
 
 interface = initInterface(interfSignalOrPath);
@@ -65,10 +70,20 @@ else
 end
 Nartif = length(artifactTypes);
 
+% default field to store automatic artifact in
+if(isprop(interface,'settings') && isfield(interface.settings,'ARTIFACT_AUTOLABEL_WHICH'))
+    artifactAutoWhich =interface.settings.ARTIFACT_AUTOLABEL_WHICH;
+    fprintf('auto artifact will be stored at position %d (%s)(from interface)\n',artifactAutoWhich,artifactTypes{artifactAutoWhich});
+else
+    artifactAutoWhich = 1;
+    fprintf('auto artifact will be stored at position %d (%s)(DEFAULT)\n',artifactAutoWhich,artifactTypes{artifactAutoWhich});
+end
+
+
 % init empty annotation array
 annotation=cell(length(signalIds),1);
 
-fprintf(' ... DONE\n');
+fprintf(' ... ihitialization done\n');
 
 % go through all signals
 tic
@@ -77,29 +92,40 @@ for ii=1:N
     sigId=signalIds{ii};
     [curSignals ~]=interface.getSignalsById(sigId);
     [Nr,Nc] = size(curSignals);
-    fprintf('   > signal %s (%d/%d)',sigId, ii,N)
     Nsec=ceil(Nc/samplingFreq);
+    fprintf('   > signal %s (%d/%d), %ds',sigId, ii,N,Nsec)
         
     % init empty annot
     % annotation matrix - rows=channels, columns=seconds, slices=artifact types
+%     allAn = false(Nr,Nsec,Nartif); 
+%     
+%     artSec=[];
+%     % process all channels
+%     for ci=1:Nr
+%         
+%         curAn = sigInspectClassify(curSignals(ci,:),samplingFreq, method);
+%         
+%         allAn(ci,:,1)=curAn;
+%         artSec(ci) = sum(curAn>0);
+%     end
+
+    % all channels at once
+    
     allAn = false(Nr,Nsec,Nartif); 
+    curAn = sigInspectClassify(curSignals,samplingFreq, method,varargin{:});        
+    allAn(:,:,artifactAutoWhich)=curAn; % channel, second, artif. type
     
-    artSec=[];
-    % process all channels
-    for ci=1:Nr
-        
-        curAn = sigInspectClassify(curSignals(ci,:),samplingFreq, method);
-        
-        allAn(ci,:,1)=curAn;
-        artSec(ci) = sum(curAn>0);
-    end
+    % annot summary
+    artSec = sum(any(curAn,3),2);
+    fprintf(' > %s artifact seconds in channels \n',sprintf('%d,',artSec))
     
-    fprintf(' > (%s) artifact seconds in channels \n',num2str(artSec))
-    
+    % store 
+    annotation{ii} = allAn;
     % pad to artifact type count Nartif
-    annotation{ii} = padarray(allAn,[0 0 (Nartif-size(allAn,3))],0,'post');
+    % annotation{ii} = padarray(allAn,[0 0 (Nartif-size(allAn,3))],0,'post');
         
 end
+
 fprintf('DONE: signals labelled in %.2f seconds----\n',toc)
 
 % save annotation to *.mat file
