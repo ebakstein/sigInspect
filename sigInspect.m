@@ -1,28 +1,31 @@
 function varargout = sigInspect(varargin)
-% SIGINSPECT MATLAB code for sigInspect.fig
-%      SIGINSPECT, by itself, creates a new SIGINSPECT or raises the existing
-%      singleton*.
+% SIGINSPECT - a GUI for signal inspection and annotation
 %
-%      H = SIGINSPECT returns the handle to a new SIGINSPECT or the handle to
-%      the existing singleton*.
+% USE:
+% 1 - single multi-channel signal (matrix as input)
+% C x N matrix (C = channels, N = samples )
+%   sigInspect(signal, samplingFreq); % signal: chan. in rows, samples in columns
 %
-%      SIGINSPECT('CALLBACK',hObject,eventData,handles,...) calls the local
-%      function named CALLBACK in SIGINSPECT.M with the given input arguments.
+% 2 - multiple signals (cell array as input)
+%   s={signal1,signal2,signal3};
+%   sigInspect(s, samplingFreq);
 %
-%      SIGINSPECT('Property','Value',...) creates a new SIGINSPECT or raises the
-%      existing singleton*.  Starting from the left, property value pairs are
-%      applied to the GUI before sigInspect_OpeningFcn gets called.  An
-%      unrecognized property name or invalid value makes property application
-%      stop.  All inputs are passed to sigInspect_OpeningFcn via varargin.
+% 3 - with pre-initialized data interface
+%   intf = sigInspectDataCsv('/home/data-path/')
+%   intf.settings.SAMPLING_FREQ = 8000;
+%   intf.settings.ARTIFACT_TYPES = {'type 1','type 2','other'};
+%   sigInspect(intf)
+% 
 %
-%      *See GUI Options on GUIDE's Tools menu.  Choose "GUI allows only one
-%      instance to run (singleton)".
+% Find current version and PDF manual at https://github.com/ebakstein/sigInspect  
+% 
+% See also: SIGINSPECTAUTOLABEL
 %
-% See also: GUIDE, GUIDATA, GUIHANDLES
+% Author: 
+%   Eduard Bakstein, eduard.bakstein@felk.cvut.cz
+%   and the neuro.felk.cvut.cz research group
+%   
 
-% Edit the above text to modify the response to help sigInspect
-
-% Last Modified by GUIDE v2.5 11-Feb-2016 14:23:33
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -32,9 +35,9 @@ gui_State = struct('gui_Name',       mfilename, ...
                    'gui_OutputFcn',  @sigInspect_OutputFcn, ...
                    'gui_LayoutFcn',  [] , ...
                    'gui_Callback',   []);
-if nargin && ischar(varargin{1})
-    gui_State.gui_Callback = str2func(varargin{1});
-end
+% if nargin && ischar(varargin{1})
+%     gui_State.gui_Callback = str2func(varargin{1});
+% end
 
 if nargout
     [varargout{1:nargout}] = gui_mainfcn(gui_State, varargin{:});

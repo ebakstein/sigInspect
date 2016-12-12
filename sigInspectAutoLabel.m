@@ -1,5 +1,5 @@
-function annotation = sigInspectAutoLabel(interfSignalOrPath, pathToSave, method, varargin)
-% annot = sigInspectAutoLabel(iterfSignalOrPath, pathToSave, method, params)  
+function annotation = sigInspectAutoLabel(interfSignalOrPath, pathToSave, samplingFreq, method, varargin)
+% annot = sigInspectAutoLabel(iterfSignalOrPath, pathToSave, samplingFreq, method, params)  
 %   label all signals from provided cell array or interface using pre-learned 
 %   classifier, return/save annot
 %
@@ -19,11 +19,13 @@ function annotation = sigInspectAutoLabel(interfSignalOrPath, pathToSave, method
 % 
 %           D) empty - will pop-up a gui dialog to load mat-file, formatted
 %           according to C)
-%   method     - classifier used to label data - see sigInspectClassify for
-%                details
 %   pathToSave - file path to save *.mat file with generated annotation
 %                to.(only if no output parameters are set
 %                default: sigInspectAutoAnnotationyyyy-mm-dd-HHMMSS.mat.
+%   samplingFreq - sampling frequency in Hz
+%                may be left blank if set in interface
+%   method     - classifier used to label data - see sigInspectClassify for
+%                details
 %   params     - one or more parameters for the selected method. See
 %                sigInspectClassify for details.
 % 
@@ -37,7 +39,7 @@ function annotation = sigInspectAutoLabel(interfSignalOrPath, pathToSave, method
 
 
 fprintf('----------- sigInspectAutoLabel -------------\n')
-if(nargin<3)
+if(nargin<4)
     method=[]; % use default of sigInspectClassify
     fprintf('Classification method unspecified, using psd(default)\n')
 end
@@ -56,8 +58,12 @@ if(isprop(interface,'settings') && isfield(interface.settings,'SAMPLING_FREQ'))
     samplingFreq = interface.settings.SAMPLING_FREQ;
     fprintf('samplingFrequency = %d Hz (from interface)\n',samplingFreq);
 else
-    samplingFreq = 24000;
-    fprintf('samplingFrequency = %d Hz (DEFAULT)\n',samplingFreq);
+    if(nargin<3 || isempty(samplingFreq))
+        samplingFreq = 24000;
+        fprintf('samplingFrequency = %d Hz (DEFAULT)\n',samplingFreq);
+    else
+        fprintf('samplingFrequency = %d Hz (from PARAMETER)\n',samplingFreq);        
+    end
 end
 
 % default artifact types / from interface
@@ -130,7 +136,7 @@ fprintf('DONE: signals labelled in %.2f seconds----\n',toc)
 
 % save annotation to *.mat file
 if(nargout<1)
-    if(nargin<3 || isempty(pathToSave))
+    if(nargin<2 || isempty(pathToSave))
         pathToSave = sprintf('sigInspectAutoAnnotation%s.mat',datestr(now,'yyyy-mm-dd-HHMMSS'));
     end
     interfaceClass = class(interface);
@@ -184,7 +190,7 @@ function interface = initInterface(vararg)
             interface=vararg;
         else
             % user hopefully provided signals as a structure
-            handles.interface=sigInspectDataBasic(vararg);
+            interface=sigInspectDataBasic(vararg);
         end
     end
     

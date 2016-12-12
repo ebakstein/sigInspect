@@ -119,6 +119,11 @@ if(~isempty(psdInds)) % save time if no PSD features are requested
         if(size(seg,2)<NFFT || any(isnan(seg)))
             continue
         end    
+
+        % compensate different sampling freq.        
+        if(samplingFreq~=24000)
+            seg = resample(seg,24000,samplingFreq);
+        end
         
         psd=pwelch(seg,NFFT,NFFT/2,NFFT)';
         npsd=psd/sum(psd);
