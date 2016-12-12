@@ -39,7 +39,9 @@
 
 \verb|sigInspect| is a Matlab GUI tool for inspecting multi-channel recordings. Is particularly useful for extracellular microelectrode recordings and allows \emph{visualization}, \emph{playback} and \emph{annotation} of segments containing \emph{artifacts}.
 
-SigInspect was developed by the NEURO group (\url{http://neuro.felk.cvut.cz}) at the Department of Cybernetics, Faculty of Electrical Engineering, Czech Technical University in Prague.
+SigInspect was developed by the NEURO group (\url{http://neuro.felk.cvut.cz}) at the Department of Cybernetics, Faculty of Electrical Engineering, Czech Technical University in Prague. 
+
+SigInspect repository with the most recent version can be found at \url{https://github.com/ebakstein/sigInspect}.
 	
 \end{minipage}
 \end{center}
@@ -130,7 +132,7 @@ For the sake of speed and usability, many controls can be accessed through simpl
 \subsection{Settings}
 To accomodate sigInspect to your needs, it may be necessary to alter some of its default settings. If you use your own data interface , the settings can be changed easily from there (see the "Advanced data loading" Section for more details). If you use sigInspect without defining your own \mcode{sigInspectDataInterface}, you can change settings easily using example code in Section \emph{Default interface}. 
 
-All the main available settings are summarised in Table \ref{tab:sigInspectSettings} - the most important ones are in bold.
+All the main available settings are summarised in Table \ref{tab:sigInspectSettings} - the most important ones are in bold. Settings are being continously added to the sigInspect, see the source code of \mcode{sigInspect / sigInspect_OpeningFcn} for a full list.
 
 %%%%%%%%%%%%%%%%%%%%%% SETTINGS TABLE %%%%%%%%%%%%%%%%%
 
@@ -166,7 +168,7 @@ SHOW\_SIG\_INFO & \mcode{ 1}              & show signal  info from interface\\
 \hline
 
 OVERVIEW\_DECIMATE\_FACTOR & \mcode{ 20}  & decimate signals by this factor before view in the overview window - this is multiplied with the basic DECIMATE\_FACTOR \\
-OVERVIEW\_GAIN & \mcode{ 10}             & increase gain in overview window (to adapt for decimation) \\
+OVERVIEW\_GAIN & \mcode{ 5}             & increase gain in overview window (to adapt for decimation) \\
 
 \hline
 \multicolumn{3}{l}{spectrogram plot} \\
@@ -312,18 +314,33 @@ sigInspect(intf);
 \end{lstlisting}
 
 \subsection{Artifact types handling}
-No matter what artifact types you set in your interface, the  \mcode{sigInspectAutoLabel} function uses only 0-1 (clean-artifact) classification. The number of artifact types you define will only be used to resize annotation matrix for each signal to appropriate dimension. It may be a good idea to use artifact types in the form \mcode{intf.ARTIFACT_TYPES=\{'AUTO','myType1','myType2'\}}, so that you keep record of the original automatic annotation.
+No matter what artifact types you set in your interface, the  \mcode{sigInspectAutoLabel} function uses only 0-1 (clean-artifact) classification. The number of artifact types you define will only be used to resize annotation matrix for each signal to appropriate dimension. It may be a good idea to use artifact types in the form \mcode{intf.ARTIFACT_TYPES=\{'AUTO','myType1','myType2'\}}, so that you keep record of the original automatic annotation. You can also set the property \mcode{intf.settings.ARTIFACT_AUTOLABEL_WHICH = 2} to set which artifact type shall be assigned by the auto label procedure. Default value is the 1.
 
 \subsection{Artifact classification methods}
-While \mcode{sigInspectAutoLabel} is gateway function for user's convenience, artifact classification itself is performed by the function  \mcode{sigInspectClassify}. This function also implements all classification methods mentioned below. Artifact classification is done on a set of features computed from the raw signal by \mcode{sigInspectComputeFeatures} - the feature set varies from method to method.
+While \mcode{sigInspectAutoLabel} is gateway function for user's convenience, artifact classification itself is performed by the function  \mcode{sigInspectClassify}. This function also implements all classification methods mentioned below. Artifact classification is done on a set of features computed from the raw signal by \mcode{sigInspectComputeFeatures} - the feature set varies from method to method. Particular setting of input parameters for each method can be found in \mcode{help sigInspectClassify}.
 
 \subsubsection{psd - deviation from ideal spectrum}
-The \emph{psd} method is designed to detect artifacts with very strong frequency components and is based on our 2015 EMBC paper \cite{Bakstein2015}. The classifier stores a mean Power spectrum (or Power Spectral Density - PSD), calculated on clean portions of a training set of 60 ten seconds long microEEG recordings. Manual annotation of the training data was performed by 5 trained experts using previous version of the sigInspect tool. Classification threshold was set to maximum accuracy on the training data. More details can be found in the paper.
+The \emph{psd} method is designed to detect artifacts with very strong frequency components and is based on our 2015 EMBC paper \cite{Bakstein2015}. The classifier stores a mean Power spectrum (or Power Spectral Density - PSD), calculated on clean portions of a training set of 60 ten seconds long microEEG recordings. Manual annotation of the training data was performed by 5 trained experts using previous version of the sigInspect tool. Classification threshold was set to maximum accuracy on the training data. Detection sensitivity can be modified by adjusting detection threshold (additional input parameter): default value 0.0085, set about 0.0075 to obtain more sensitive classification (at the cost of decreased specificity). More details can be found in the paper \cite{Bakstein2015} or thesis \cite{Bakstein2016}. 
 
-\subsubsection{Other methods}
-Other more accurate classification methods are still under development. Please, stay tuned.
-%\subsubsection{tree - decision tree classifier}
-%This method uses a decision tree classifier
+\subsubsection{cov - maximal stationary segment}
+The \emph{cov} method is based on the solution presented by Aboy and Falkenberg in \cite{Falkenberg2003, Aboy2006}. The method compares two signal segments by the ratio of variance of their autocorrelation functions. SigInspect implements an extended variant presented in the paper \cite{Bakstein2015}, which uses the same principle to construct a similarity matrix between all possible segment pairs and returns the largest component of similarity (i.e. non-contiguous set of signal segments between which exists a sub-threshold path). Detection threshold (default: 1.2) and length of the segment (0.25s) can be set as additional parameters. Classification example using the cov method can be found in the following code:
+
+\begin{lstlisting}
+% use the Basic interface + data in mat-file
+intf = sigInspectDataBasic('mySignals.mat');
+% change the settings
+intf.settings.ARTIFACT_TYPES={'Automatic','Unsure'};
+% run autoLabel with the cov method
+sigInspectAutoLabel(intf,'myAutoAnnot.mat',[],'cov',1.2, 0.25);
+% sampling frequency left default (24kHz), threshold 1.2, window length 0.25s
+% run sigInspect
+sigInspect(intf);
+% now click the "load" icon in the toolbar and open myAutoAnnot.mat
+\end{lstlisting}
+
+\subsubsection{tree - decision tree classification}
+The \emph{tree} classifier is presented in the thesis \cite{Bakstein2016} and uses a decision tree classifier on multiple spectral and time-domain features. The tree classifier achieved highest artifact detection accuracy on a multi-centric data set \cite{Bakstein2016}. Its variant \emph{treePrg}, trained on a single center database provides a more computationally efficient alternative, omitting features with high computational cost.
+
 
 \section{About + license}
 SigInspect is distributed under the Lesser General Public License (\url{https://www.gnu.org/licenses/lgpl-3.0.en.html}), which means you can use sigInspect free of charge for research, educational, commercial or any other purpose, but you should keep the license when using larger portions of the code. If you publish results processed with our tool, we expect you to give us appropriate authorship credit (e.g. by citing our paper \cite{Bakstein2015}). 
@@ -344,6 +361,9 @@ We will be very happy if sigInspect helps you in your research. If you are happy
 \end{description}
 
 \begin{thebibliography}{9}	
+\bibitem{Bakstein2016}
+	Bakstein E.	\emph{Deep Brain Recordings in Parkinson's Disease: Processing, Analysis and Fusion with Anatomical Models}, PhD thesis, Czech Technical University in Prague, 2016
+
 \bibitem{Bakstein2015}
 	Bakstein E., Schneider J., Sieger T., Novak D., Wild J. and Jech R.
 	\emph{Supervised Segmentation of Microelectrode Recording Artifacts Using Power Spectral Density}
