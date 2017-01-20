@@ -56,7 +56,7 @@ function sigInspectOverview_OpeningFcn(hObject, eventdata, handles, varargin)
 % Choose default command line output for sigInspectOverview
 handles.output = hObject;
 
-if(isempty(varargin) || ~isstruct(varargin{1}) || ~isfield(varargin{1},'figure1') || ~ishandle(varargin{1}.figure1))
+if(isempty(varargin) || ~isstruct(varargin{1}) || ~isfield(varargin{1},'sigInspectMainWindow') || ~ishandle(varargin{1}.sigInspectMainWindow))
     % improper call
     erh=errordlg('sigInspectOverview GUI called with improper parameter - should be sigInspectOverview(parentHandles)','sigInspectOverview ERROR','modal');
     waitfor(erh);
@@ -94,10 +94,10 @@ if(isfield(parentHandles,'overviewPosition') && ~isempty(parentHandles.overviewP
 end
     
 
-guidata(parentHandles.figure1, parentHandles);
+guidata(parentHandles.sigInspectMainWindow, parentHandles);
 % uiresume(parentHandles.figure);
 
-handles.parentFig = parentHandles.figure1;
+handles.parentFig = parentHandles.sigInspectMainWindow;
 % Update handles structure
 guidata(hObject, handles);
 % uiwait();
@@ -185,7 +185,7 @@ if(~isempty(handles) && isfield(handles,'parentFig') && ishandle(handles.parentF
     parentHandles.overviewSigAxes = [];  % overview window signal axis handles
     set(parentHandles.overviewChck,'Value',0);
     parentHandles.overviewPosition = get(handles.overviewFigure,'Position');
-    guidata(parentHandles.figure1,parentHandles);
+    guidata(parentHandles.sigInspectMainWindow,parentHandles);
 end
 
 % Hint: delete(hObject) closes the figure

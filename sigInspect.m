@@ -26,6 +26,10 @@ function varargout = sigInspect(varargin)
 %   and the neuro.felk.cvut.cz research group
 %   
 
+% Edit the above text to modify the response to help sigInspect
+
+% Last Modified by GUIDE v2.5 20-Jan-2017 13:21:44
+
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -35,9 +39,21 @@ gui_State = struct('gui_Name',       mfilename, ...
                    'gui_OutputFcn',  @sigInspect_OutputFcn, ...
                    'gui_LayoutFcn',  [] , ...
                    'gui_Callback',   []);
-% if nargin && ischar(varargin{1})
-%     gui_State.gui_Callback = str2func(varargin{1});
-% end
+
+ % initialization: user may provide 1-2 input params (filename, fs), during
+ % initialization called with 4 input params
+ if nargin > 2 && ischar(varargin{1}) % initialization (internal calls)
+     gui_State.gui_Callback = str2func(varargin{1});
+ else % user-prompted
+    % check singleton
+    h = findall(0,'tag','sigInspectMainWindow');   
+    if(~isempty(h))
+        eh = errordlg('Another running instance of sigInspect detected. Only a single copy of sigInspect is allowed, please, close the other instance first.','Another sigInspect running','modal');
+        waitfor(eh);
+        return  
+    end
+     
+ end
 
 if nargout
     [varargout{1:nargout}] = gui_mainfcn(gui_State, varargin{:});
@@ -86,6 +102,7 @@ handles.settings.ARTIFACT_AUTOLABEL_WHICH=1;                                % wh
 % spectrogram
 handles.settings.SPECTROGRAM_NFFT = 1024;                                   % points to be used in spectrogram FFT
 handles.settings.SPECTROGRAM_FREQ_LIMS=[0 3000];                            % limit spectrogram to this frequency range
+handles.settings.LINK_X_AXIS = 0;                                           % link x axis in spectrogram to signal view (useful for zoom)
 handles.settings.DISABLE_SPECTROGRAM = 0;                                   % disable spectrogram (useful for long signals)
 handles.settings.ENABLE_WHOLE_SPECTROGRAM = 0;                              % adds additional checkbox to toggle between current second and whole signal in spectrogram
 handles.settings.ENABLE_HIDE_UNCHECKED = 1;                                 % enable checkbox to hide unchecked channels
@@ -131,9 +148,14 @@ handles.settings.ANNOT_FILE_CHECK_ARTIFACT_TYPES = 1;                       % sh
 
 handles = sigInspectInit(handles,varargin);
 
-
 % Update handles structure
 guidata(hObject, handles);
+
+if(handles.quitNow)
+    close(handles.sigInspectMainWindow);
+end
+
+
 
 
 
@@ -141,13 +163,15 @@ guidata(hObject, handles);
 function handles=sigInspectInit(handles, vararg)
     % ------ load interface from input arguments or data from file
 
+    % addPath
+    if(~exist('sigInspectDataBasic.m','file'))
+        sigInspectAddpath;
+    end
+    
     % data interface
     handles.interface=[];
-
+    handles.quitNow = 0;
     % -- loading data from artifactCatalog - transferred from catalogAnnotator
-    % disp('loading artifact catalog data')
-    % load('artifactCatalog.mat'); % load artifactCatalogData
-    % disp('done')
     if(isempty(vararg))
          disp('sigInspect: *.mat file with signal(s) in cell array variable signal, signals or data')         
          while(isempty(handles.interface))
@@ -158,6 +182,7 @@ function handles=sigInspectInit(handles, vararg)
             if(~ischar(fileName))            
                 h=errordlg(['sigInspect can not start without a signal - please select mat file with signals or provide signals or interface as an input parameter'],'can not start without signals', 'modal');
                 waitfor(h)
+                handles.quitNow=1;
                 return
             end
             
@@ -175,6 +200,7 @@ function handles=sigInspectInit(handles, vararg)
                     case 'Yes'
                         continue
                     case 'Quit'
+                        handles.quitNow=1;
                         return
                 end
  
@@ -202,7 +228,8 @@ function handles=sigInspectInit(handles, vararg)
     if(isempty(handles.interface))
         h=errordlg('No signals nor interface loaded - quitting','sigInspect initialization error');
         waitfor(h);
-        delete(handles.figure1);
+        handles.quitNow = 1;
+        return
     end
 
      % ------ load signal info from interface
@@ -214,7 +241,7 @@ function handles=sigInspectInit(handles, vararg)
     if(handles.N<1)
         dh=errordlg('Interface provided 0 signals - closing','sigInspect load error','modal');
         waitfor(dh);
-        delete(handles.figure1);
+        handles.quitNow=1;
         return
     end
 
@@ -314,7 +341,14 @@ function handles=sigInspectInit(handles, vararg)
     redrawSignalSelect(handles);
     handles=setSignal(handles,1,1);
     handles = playSound(handles);
+    
+    % zoom callbacks
+%     set(zoom(handles.signalAxes),'ActionPostCallback',@(obj,eventdata)showSecond(guidata(obj)));
+%     set(zoom(handles.signalAxes),'ActionPostCallback',@(obj,eventdata)showSecond(guidata(obj)));
+     set(zoom(handles.signalAxes),'ActionPostCallback',@postZoom);
+    
 
+    % check call without parameters
     nrgChck(nargout,'init')
 
 % updates annotation buttons to match current artifact types
@@ -352,7 +386,7 @@ function handles = initChannelCheckboxes(handles)
         ypos=minMax(1)+chi*step;
         pos=defaultPos;
         pos(2)=ypos;
-        handles.(chckName)= uicontrol(handles.figure1,...
+        handles.(chckName)= uicontrol(handles.sigInspectMainWindow,...
                                   'Style','checkbox',...
                                   'Tag',chckName,...
                                   'Value',0,...
@@ -550,7 +584,10 @@ function redraw(handles,adaptGainToSignal)
 %     tic
     redrawSpectrogram(handles);
 %    toc    
-%     linkaxes([handles.signalAxes,handles.spectroAxes],'x')
+    
+    if(handles.settings.LINK_X_AXIS)
+        linkaxes([handles.signalAxes,handles.spectroAxes],'x')
+    end
         
     redrawSignalSelect(handles)
         
@@ -617,7 +654,7 @@ function redrawOverview(handles, justPatch)
             
             
             % return control to main figure
-%             figure(handles.figure1)
+%             figure(handles.sigInspectMainWindow)
             
         else
             warning('curSignalsOverview not initialized')
@@ -692,7 +729,7 @@ function handles = initOverview(handles)
             handles.overviewFig=[];
             
 %             if(handles.settings.OVERVIEW_ALWAYS_ON_TOP)
-%                 set(handles.figure1, 'WindowButtonMotionFcn', '')
+%                 set(handles.sigInspectMainWindow, 'WindowButtonMotionFcn', '')
 %             end
 
         end
@@ -703,9 +740,9 @@ function handles = initOverview(handles)
         sigInspectOverview(handles);
         
         % changes sigInspect handles! - sets handles.overviewFig, handles.overviewSigAxes        
-        handles=guidata(handles.figure1);        
+        handles=guidata(handles.sigInspectMainWindow);        
         if(handles.settings.OVERVIEW_ALWAYS_ON_TOP)
-            %set(handles.figure1, 'WindowButtonMotionFcn', @overviewOnTop)
+            %set(handles.sigInspectMainWindow, 'WindowButtonMotionFcn', @overviewOnTop)
             WinOnTop(handles.overviewFig);
         end    
     end
@@ -818,9 +855,11 @@ function redrawSpectrogram(handles,forceRedraw,initialize)
             sigN=sn;
         end
         % show x axis on the top
-        set(ah,'Box','off','XAxisLocation','top');
+        %set(ah,'Box','off','XAxisLocation','top');
+        set(ah,'Box','off','XAxisLocation','top','XTick',[]);
+        
         % hide signal xtic and x axis
-        set(sh,'XTick',[],'XTickLabel',[]);
+        %set(sh,'XTick',[]);%,'XTickLabel',[]);
             
 %         xlabel('time [ms]')
 %         ylabel('frequency [Hz]')
@@ -1041,7 +1080,7 @@ function handles = playSound(handles)
                 else
                     play(handles.audioplayer);
                 end
-                % guidata(handles.figure1, handles);
+                % guidata(handles.sigInspectMainWindow, handles);
             end
         else
             soundsc(sig, handles.samplingFreq);  
@@ -1072,7 +1111,7 @@ set(handles.overviewChck,'Value',isOn);
 handles=initOverview(handles);
 if(isOn)
     handles=computeOverviewSignals(handles);
-    guidata(handles.figure1,handles);
+    guidata(handles.sigInspectMainWindow,handles);
     redrawOverview(handles);
 end
        
@@ -1145,7 +1184,7 @@ function toggleSpectrogramWhole(handles,whole)
     end     
 %     xlim(handles.spectroAxes,xlm);
     showSecond(handles);
-%     figure(handles.figure1)
+%     figure(handles.sigInspectMainWindow)
 
 
 
@@ -1325,7 +1364,7 @@ function handles = loadSignals(handles)
     
     
     % store data to gui
-    guidata(handles.figure1, handles)
+    guidata(handles.sigInspectMainWindow, handles)
     nrgChck(nargout,'loadSignals');
 
 % decimate signals for overview window    
@@ -1388,7 +1427,7 @@ function handles = saveAll(handles)
     
     % no changes compared to saved version
     handles.anyChanges = false;
-%     guidata(handles.figure1,handles);
+%     guidata(handles.sigInspectMainWindow,handles);
     nrgChck(nargout,'saveAll');
 
 
@@ -1456,7 +1495,7 @@ function handles = markCurrentUnsure(handles, annot)
 %     end
 %     
 %     handles.anyChanges = true; % some changes done
-% %     guidata(handles.figure1, handles)
+% %     guidata(handles.sigInspectMainWindow, handles)
 %     dispAnnotation(handles);
 %     nrgChck(nargout,'markCurrentUnsure');
 
@@ -1645,10 +1684,10 @@ function signalSelect_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 % loadDbsSignals(handles);
 % selectAllChannels(handles,1);
-% uicontrol(handles.figure1);
+% uicontrol(handles.sigInspectMainWindow);
 % redraw(handles)
 handles=setSignal(handles,get(handles.signalSelect,'Value'),1);
-guidata(handles.figure1,handles);
+guidata(handles.sigInspectMainWindow,handles);
 
 
 % --- Executes during object creation, after setting all properties.
@@ -1669,7 +1708,7 @@ function nextBtn_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles = nextSignal(handles);
-guidata(handles.figure1,handles);
+guidata(handles.sigInspectMainWindow,handles);
 
 function handles = nextSignal(handles)
     current = getCurSig(handles); %get(handles.signalSelect,'Value');
@@ -1741,7 +1780,7 @@ function replayBtn_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles = playSound(handles);
-guidata(handles.figure1,handles);
+guidata(handles.sigInspectMainWindow,handles);
 
 % --- Executes on button press in stopBtn.
 function stopBtn_Callback(hObject, eventdata, handles)
@@ -1757,7 +1796,7 @@ function annot1Btn_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 
 handles = annotateCurrent(handles,1);
-guidata(handles.figure1,handles);
+guidata(handles.sigInspectMainWindow,handles);
 
 
 function annot2Btn_Callback(hObject, eventdata, handles)
@@ -1765,7 +1804,7 @@ function annot2Btn_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles = annotateCurrent(handles,2);
-guidata(handles.figure1,handles);
+guidata(handles.sigInspectMainWindow,handles);
 
 
 % --- Executes on button press in annot5Btn.
@@ -1774,7 +1813,7 @@ function annot3Btn_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles = annotateCurrent(handles,3);
-guidata(handles.figure1,handles);
+guidata(handles.sigInspectMainWindow,handles);
 
 
 
@@ -1784,7 +1823,7 @@ function annot4Btn_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles = annotateCurrent(handles,4);
-guidata(handles.figure1,handles);
+guidata(handles.sigInspectMainWindow,handles);
 
 
 % --- Executes on button press in annot5Btn.
@@ -1793,7 +1832,7 @@ function annot5Btn_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles = annotateCurrent(handles,5);
-guidata(handles.figure1,handles);
+guidata(handles.sigInspectMainWindow,handles);
 
 
 % --- Executes on button press in annot6Btn.
@@ -1802,7 +1841,7 @@ function annot6Btn_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles = annotateCurrent(handles,6);
-guidata(handles.figure1,handles);
+guidata(handles.sigInspectMainWindow,handles);
 
 
 % --- Executes on slider movement.
@@ -1940,7 +1979,7 @@ function secondSelect_Callback(hObject, eventdata, handles)
 % Hints: contents = cellstr(get(hObject,'String')) returns secondSelect contents as cell array
 %        contents{get(hObject,'Value')} returns selected item from secondSelect
 showSecond(handles);
-% uicontrol(handles.figure1);
+% uicontrol(handles.sigInspectMainWindow);
 
 
 
@@ -1963,7 +2002,7 @@ function nextSecBtn_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles = nextSecond(handles);
-guidata(handles.figure1,handles);
+guidata(handles.sigInspectMainWindow,handles);
 
 function handles = nextSecond(handles)
 curSec = getCurSec(handles);
@@ -1990,7 +2029,7 @@ function prevSecBtn_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles = prevSecond(handles);
-guidata(handles.figure1,handles)
+guidata(handles.sigInspectMainWindow,handles)
 
 
 function handles = prevSecond(handles)
@@ -2020,7 +2059,7 @@ function SaveBtn_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles = saveAll(handles);
-guidata(handles.figure1,handles);
+guidata(handles.sigInspectMainWindow,handles);
 
 
 function keyPressHandler(evt,handles)        
@@ -2139,14 +2178,14 @@ switch(evt.Key)
 
 end
 
-guidata(handles.figure1,handles);
+guidata(handles.sigInspectMainWindow,handles);
 
 
 
     
-% --- Executes when user attempts to close figure1.
-function figure1_CloseRequestFcn(hObject, eventdata, handles)
-% hObject    handle to figure1 (see GCBO)
+% --- Executes when user attempts to close sigInspectMainWindow.
+function sigInspectMainWindow_CloseRequestFcn(hObject, eventdata, handles)
+% hObject    handle to sigInspectMainWindow (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
@@ -2170,7 +2209,7 @@ if(exist('handles','var') && isstruct(handles) && isfield(handles,'anyChanges')&
 end
 
 % close overview + main fig.
-if(isstruct(handles)&&~isempty(handles.overviewFig) && ishandle(handles.overviewFig))
+if(isstruct(handles)&&isfield(handles,'overviewFig')&&~isempty(handles.overviewFig) && ishandle(handles.overviewFig))
     delete(handles.overviewFig) % close overview window
 end
 delete(hObject)
@@ -2183,9 +2222,9 @@ dispAnnotation(handles)
 enableDisableSpectroChck(handles);
 
 
-% --- Executes on key press with focus on figure1 or any of its controls.
-function figure1_WindowKeyPressFcn(hObject, eventdata, handles)
-% hObject    handle to figure1 (see GCBO)
+% --- Executes on key press with focus on sigInspectMainWindow or any of its controls.
+function sigInspectMainWindow_WindowKeyPressFcn(hObject, eventdata, handles)
+% hObject    handle to sigInspectMainWindow (see GCBO)
 % eventdata  structure with the following fields (see FIGURE)
 %	Key: name of the key that was pressed, in lower case
 %	Character: character interpretation of the key(s) that was pressed
@@ -2204,7 +2243,7 @@ function soundOnChck_Callback(hObject, eventdata, handles)
 snd = getSoundState(handles);
 if(snd)
     handles = playSound(handles);
-    guidata(handles.figure1,handles);
+    guidata(handles.sigInspectMainWindow,handles);
 else
     stopSound(handles);
 end
@@ -2217,7 +2256,7 @@ end
 % % eventdata  reserved - to be defined in a future version of MATLAB
 % % handles    structure with handles and user data (see GUIDATA)
 % handles = saveAll(handles);
-% guidata(handles.figure1,handles);
+% guidata(handles.sigInspectMainWindow,handles);
 
 
 % --- Executes on button press in spectroChck.
@@ -2237,7 +2276,7 @@ function saveTool_ClickedCallback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 handles = saveAll(handles);
-guidata(handles.figure1,handles);
+guidata(handles.sigInspectMainWindow,handles);
 
 
 % --------------------------------------------------------------------
@@ -2348,7 +2387,7 @@ end
 function setAnnot(handles,newAnnot)
     % sets new annotation to handles, does no error checking
     handles.annotation = newAnnot;
-    guidata(handles.figure1, handles);
+    guidata(handles.sigInspectMainWindow, handles);
     dispAnnotation(handles);    
     redrawSignalSelect(handles);
     redrawOverview(handles,0); % 0=not just patch
@@ -2464,3 +2503,10 @@ function hideChck_Callback(hObject, eventdata, handles)
 
 % Hint: get(hObject,'Value') returns toggle state of hideChck
 toggleHideUnselected(handles, get(hObject, 'Value'))
+
+function postZoom(obj,e)
+xl = get(e.Axes,'xlim');
+if(diff(xl)==1) % restored to 1s x-axis
+    showSecond(guidata(obj))
+end
+
