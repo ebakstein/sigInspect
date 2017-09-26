@@ -1299,8 +1299,8 @@ function handles = loadSignals(handles)
 %        txtH = text((lm(1)+lm(2))/2, (lm(3)+lm(4))/2, 'Loading...','BackgroundColor','w','HorizontalAlignment','center','VerticalAlignment','middle','Margin',40,'EdgeColor','k','Parent',handles.signalAxes);
 %     end
     
-    
-    [curSignals handles.curSigInfo]=handles.interface.getSignalsById(sigId);
+    [curSignals handles.curSigInfo]=handles.interface.getSignalsById(sigId);      
+        
     [Nr,Nc] = size(curSignals);
         
     if(Nr>handles.settings.PLOT_CHANNELS)
@@ -1730,8 +1730,17 @@ function handles = nextSignal(handles)
 function handles = setSignal(handles,sigId,sec)
     % handles = setSignal(handles,sigId,sec)
     
+%     prevHndl = handles;    
+%     prevSigId = getCurSig(handles);
+%     
     set(handles.signalSelect,'Value',sigId);
-    handles = loadSignals(handles);    
+%     try
+        handles = loadSignals(handles);    
+%     catch
+%         errordlg(['Error loading signal: ' handles.signalIds{sigId}],'Data load error')
+%         set(handles.signalSelect,'Value',prevSigId);
+%         return;
+%     end
     
     % check whether annot is initialized, if not, do it
     if(isempty(handles.annotation{sigId}))
