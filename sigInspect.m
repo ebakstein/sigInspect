@@ -300,6 +300,12 @@ function handles=sigInspectInit(handles, vararg)
     %           repeat for all possible channels
     handles.internal.channelColors = repmat(handles.internal.channelColors,ceil(handles.internal.MaxChannels/length(handles.internal.channelColors)),1);
     handles.internal.channelColors = handles.internal.channelColors(1:handles.internal.MaxChannels);
+
+    % for displaying time positions in the signals axes:
+    % left mouse click followed by right mouse click results in displaying
+    % the corresponding time interval in console
+    handles.internal.lastButtonPressedInSignalAxes=0; % which mouse button was pressed when mouse in the signals axes?
+    handles.internal.lastPositionInSignalAxes=0; % last mouse position in the signals axes
     
     % for overview window
     handles.overviewFig = []; % overview window figure handle
@@ -2503,6 +2509,23 @@ function hideChck_Callback(hObject, eventdata, handles)
 
 % Hint: get(hObject,'Value') returns toggle state of hideChck
 toggleHideUnselected(handles, get(hObject, 'Value'))
+
+
+% --- Executes on mouse press over signals axes background.
+function signalAxes_ButtonDownFcn(hObject, eventdata, handles)
+% hObject    handle to signalAxes (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+if handles.internal.lastButtonPressedInSignalAxes==1 && eventdata.Button==3
+    % display the time interval of the last and the current mouse position in the signals axes
+    % (in seconds, aligned to 10ms such that the interval reported contains the real interval)
+    fprintf(1,' %6.2f, %6.2f, \n',...
+        floor(handles.internal.lastPositionInSignalAxes*100)/100,...
+        ceil(eventdata.IntersectionPoint(1)*100)/100);
+end
+handles.internal.lastPositionInSignalAxes=eventdata.IntersectionPoint(1);
+handles.internal.lastButtonPressedInSignalAxes=eventdata.Button;
+guidata(handles.sigInspectMainWindow, handles);
 
 function postZoom(obj,e)
 xl = get(e.Axes,'xlim');
