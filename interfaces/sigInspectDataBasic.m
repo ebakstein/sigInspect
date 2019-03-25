@@ -100,7 +100,7 @@ classdef sigInspectDataBasic < sigInspectDataInterface
         % load signals from a mat file
         function loadMat(obj,filePath)
             if(~exist(filePath,'file'))
-                error('file does not exist: %s')
+                error('file does not exist: %s',filePath)
             end
             
             if(isempty(strfind(filePath,'.mat')))
