@@ -84,6 +84,7 @@ handles.settings.DECIMATE_FACTOR = 1;                                       % de
 
 handles.settings.ADAPT_GAIN_TO_SIGNAL = 1;                                  % automatically adapt gain slider to signal
 handles.settings.ADAPT_GAIN_QUANTILE = .002;                                % use this quantile for gain adaptation
+handles.settings.ADAPT_GAIN_REFERENCE_AMPLITUDE = 20;                       % reference signal amplification at gain=1
 
 handles.settings.NORMALIZE_SIGNAL_PER_CHANNEL=1;                            % normalize each channel (parallel signal) separately
 handles.settings.NORMALIZE_SIGNAL_PER_CHANNEL_QUANTILE=0.1;                 % use this quantile for channel normalization
@@ -483,7 +484,7 @@ function doAdaptGainToSignal(handles)
     
     elCount = getCurChan(handles);
 
-    qntl=0;
+    qntl=[];
     for ci=1:elCount
         sig = handles.curSignals(ci,:);
         sig = sig-mean(sig);
@@ -492,8 +493,10 @@ function doAdaptGainToSignal(handles)
     end
     qntl=median(qntl);
        
-    thr=get(handles.thrSlider,'Value');
-    gain=min(thr/qntl, 10);
+    %thr=get(handles.thrSlider,'Value');
+    %gain=min(thr/qntl, 10);
+    gain=min(handles.settings.ADAPT_GAIN_REFERENCE_AMPLITUDE/qntl, 10);
+    
     set(handles.gainEdit,'String', gain);
     set(handles.gainEdit,'Value', gain);
     set(handles.gainSlider,'String', gain);
@@ -1386,7 +1389,7 @@ function handles = computeOverviewSignals(handles)
     handles.curSignalsOverview=[];
     
     if(handles.settings.OVERVIEW_DECIMATE_FACTOR>1)
-        handles.curSignalsOverview = zeros(size(handles.curSignals,1),size(handles.curSignals,2)/handles.settings.OVERVIEW_DECIMATE_FACTOR);
+        handles.curSignalsOverview = zeros(size(handles.curSignals,1),ceil(size(handles.curSignals,2)/handles.settings.OVERVIEW_DECIMATE_FACTOR));
         for ii=1:size(handles.curSignals,1)
             handles.curSignalsOverview(ii,:) = decimate(handles.curSignals(ii,:), handles.settings.OVERVIEW_DECIMATE_FACTOR);
         end
