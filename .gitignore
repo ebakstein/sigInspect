@@ -10,5 +10,4 @@
 *.log
 *.fdb_latexmk
 *.bbl
-/DAO
 /tests
