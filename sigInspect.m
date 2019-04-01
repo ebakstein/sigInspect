@@ -28,7 +28,7 @@ function varargout = sigInspect(varargin)
 
 % Edit the above text to modify the response to help sigInspect
 
-% Last Modified by GUIDE v2.5 20-Jan-2017 13:21:44
+% Last Modified by GUIDE v2.5 01-Apr-2019 16:51:50
 
 
 % Begin initialization code - DO NOT EDIT
@@ -318,6 +318,7 @@ function handles=sigInspectInit(handles, vararg)
     handles.redrawFun = @redraw;
     handles.redrawOverviewFun = @redrawOverview;
     handles.keyPressFun = @keyPressHandler;
+    handles.keyReleaseFun = @keyReleaseHandler;
     
     
     handles.samplingFreq = handles.settings.SAMPLING_FREQ/handles.settings.DECIMATE_FACTOR;
@@ -2198,6 +2199,10 @@ end
 
 guidata(handles.sigInspectMainWindow,handles);
 
+% --- Executes on button release for fig window
+function keyReleaseHandler(eventdata, handles)
+% 
+fprintf('key release %s\n',eventdata.Key)
 
 
     
@@ -2249,6 +2254,16 @@ function sigInspectMainWindow_WindowKeyPressFcn(hObject, eventdata, handles)
 %	Modifier: name(s) of the modifier key(s) (i.e., control, shift) pressed
 % handles    structure with handles and user data (see GUIDATA)
 keyPressHandler(eventdata, handles)
+
+% --- Executes on key release with focus on sigInspectMainWindow or any of its controls.
+function sigInspectMainWindow_WindowKeyReleaseFcn(hObject, eventdata, handles)
+% hObject    handle to sigInspectMainWindow (see GCBO)
+% eventdata  structure with the following fields (see MATLAB.UI.FIGURE)
+%	Key: name of the key that was released, in lower case
+%	Character: character interpretation of the key(s) that was released
+%	Modifier: name(s) of the modifier key(s) (i.e., control, shift) released
+% handles    structure with handles and user data (see GUIDATA)
+keyReleaseHandler(eventdata, handles)
 
 
 % --- Executes on button press in soundOnChck.
@@ -2544,4 +2559,6 @@ xl = get(e.Axes,'xlim');
 if(diff(xl)==1) % restored to 1s x-axis
     showSecond(guidata(obj))
 end
+
+
 

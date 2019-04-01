@@ -22,7 +22,7 @@ function varargout = sigInspectOverview(varargin)
 
 % Edit the above text to modify the response to help sigInspectOverview
 
-% Last Modified by GUIDE v2.5 09-Jul-2015 15:34:17
+% Last Modified by GUIDE v2.5 01-Apr-2019 17:07:45
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -216,3 +216,16 @@ function overviewFigure_KeyPressFcn(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 parentHandles = guidata(handles.parentFig);
 parentHandles.keyPressFun(eventdata,parentHandles);
+
+
+% --- Executes on key release with focus on overviewFigure and none of its controls.
+function overviewFigure_KeyReleaseFcn(hObject, eventdata, handles)
+% hObject    handle to overviewFigure (see GCBO)
+% eventdata  structure with the following fields (see MATLAB.UI.FIGURE)
+%	Key: name of the key that was released, in lower case
+%	Character: character interpretation of the key(s) that was released
+%	Modifier: name(s) of the modifier key(s) (i.e., control, shift) released
+% handles    structure with handles and user data (see GUIDATA)
+parentHandles = guidata(handles.parentFig);
+parentHandles.keyReleaseFun(eventdata,parentHandles);
+    
