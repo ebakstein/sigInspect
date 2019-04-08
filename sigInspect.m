@@ -5,10 +5,20 @@ function varargout = sigInspect(varargin)
 % 1 - single multi-channel signal (matrix as input)
 % C x N matrix (C = channels, N = samples )
 %   sigInspect(signal, samplingFreq); % signal: chan. in rows, samples in columns
+%       or
+%   sigInspect(signal, samplingFreq, sAnnotTimes); % signal annotation times (a numeric vector)
+%       or
+%   sigInspect(signal, samplingFreq, sAnnotTimes, sAnnotTexts); % signal annotation times and texts
+%       % (times as a numeric vector, texts as a cell array)
 %
 % 2 - multiple signals (cell array as input)
 %   s={signal1,signal2,signal3};
 %   sigInspect(s, samplingFreq);
+%       or
+%   sigInspect(s, samplingFreq, sAnnotTimes); % signal annotation times (a numeric vector)
+%       or
+%   sigInspect(s, samplingFreq, sAnnotTimes, sAnnotTexts); % signal annotation times and texts
+%       % (times as a numeric vector, texts as a cell array)
 %
 % 3 - with pre-initialized data interface
 %   intf = sigInspectDataCsv('/home/data-path/')
@@ -131,6 +141,10 @@ handles.settings.CHECK_CONST_SAMPLES=1;                                     % ch
 % annotation - loading checks
 handles.settings.ANNOT_DEFAULT_FILENAME = 'sigInspectAnnot##.mat';          % default name for sigInspect annotation when save button is hit. ## is replaced by current date and time
 
+% signal annotation - marking specific time positions with vertical lines and text
+handles.settings.ANNOT_SIGNAL_TIMES = []; % a vector of times to annotate
+handles.settings.ANNOT_SIGNAL_TEXTS = {}; % a cell array of texts to display at individual ANNOT_SIGNAL_TIMES (can be empty)
+
 % debug settings
 handles.settings.ANNOT_FILE_CHECK_INTERFACE_CLASS = 1;                      % should loaded annotation be checked for the same type of data interface?  DEBUG ONLY
 handles.settings.ANNOT_FILE_CHECK_ARTIFACT_TYPES = 1;                       % should loaded annotation be checked for the same type of artifacts        DEBUG ONLY
@@ -217,6 +231,16 @@ function handles=sigInspectInit(handles, vararg)
             handles.interface=sigInspectDataBasic(tmp);
             if(length(vararg)>1 && ~isempty(vararg{2}) && isnumeric(vararg{2}))
                 handles.interface.settings.SAMPLING_FREQ = vararg{2};
+            end
+            if(length(vararg)>2 && ~isempty(vararg{3}) && isnumeric(vararg{3}))
+                handles.settings.ANNOT_SIGNAL_TIMES = vararg{3};
+                if(length(vararg)>3 && ~isempty(vararg{4}) && iscell(vararg{4}))
+                    handles.settings.ANNOT_SIGNAL_TEXTS = vararg{4};
+                else
+                    warning('unrecognized argument #4: a cell array expected for annotation texts');
+                end
+            else
+                warning('unrecognized argument #3: a numeric vector expected for annotation times');
             end
         end
     end
@@ -586,6 +610,29 @@ function redraw(handles,adaptGainToSignal)
     
 %     xlim(sec+[-1 0])
 %     ylim([0,(1 + handles.settings.PLOT_CHANNELS)*handles.settings.PLOT_STEP])
+
+
+    if ~isempty(handles.settings.ANNOT_SIGNAL_TIMES)
+        % display signal annotation
+        tmpn=length(handles.settings.ANNOT_SIGNAL_TIMES); % # of times
+        % a trick to make plotting fast: we plot multiple vertical lines as a single line polygon
+        tmpx=reshape(handles.settings.ANNOT_SIGNAL_TIMES,1,tmpn); % reshape to form a row vector
+        tmpx=[tmpx; tmpx; repmat(NaN,1,tmpn)]; % 3 rows: 1st: x position, 2nd: x position, 3rd: NaN
+        tmpx=reshape(tmpx,prod(size(tmpx)),1); % reshape to column vector
+        yl=ylim();
+        yl(2)=yl(2)-diff(yl)/10; % annotation lines do not spand thw whole ylim()
+        tmpy=repmat([yl NaN]',tmpn,1); % form a column vector
+        plot(tmpx,tmpy,'color','k','LineStyle',':','LineWidth',1);
+
+        if ~isempty(handles.settings.ANNOT_SIGNAL_TEXTS)
+            tmpn=length(handles.settings.ANNOT_SIGNAL_TEXTS);
+            yl=ylim();
+            tmpy=yl(2)-diff(yl)/20; % the text appear above the lines
+            tmpy=repmat(tmpy,1,tmpn);
+            text(handles.settings.ANNOT_SIGNAL_TIMES(1:tmpn),tmpy,handles.settings.ANNOT_SIGNAL_TEXTS,'HorizontalAlignment','center');
+        end
+    end
+
     
     hold off
 %     set(handles.signalAxes,'Visible','on')
