@@ -74,6 +74,9 @@ soundIsPlaying=false;
 % Choose default command line output for sigInspect
 handles.output = hObject;
 
+% set mouse scroll callback for the window
+set(hObject,'WindowScrollWheelFcn',@mainWindow_ScrollWheelFcn);
+
 handles.settings=struct();
 
 % basic defaults
@@ -2083,6 +2086,10 @@ guidata(handles.sigInspectMainWindow,handles);
 
 function keyPressHandler(evt,handles)        
 % handles=guidata(hObject);
+
+% remember the current key modifiers
+handles.keyModifiers=evt.Modifier;
+
 switch(evt.Key)
     case 'rightarrow'
         handles=nextSecond(handles);
@@ -2201,11 +2208,12 @@ guidata(handles.sigInspectMainWindow,handles);
 
 % --- Executes on button release for fig window
 function keyReleaseHandler(eventdata, handles)
-% 
-fprintf('key release %s\n',eventdata.Key)
+
+% remember the current key modifiers
+handles.keyModifiers=eventdata.Modifier;
+guidata(handles.sigInspectMainWindow,handles);
 
 
-    
 % --- Executes when user attempts to close sigInspectMainWindow.
 function sigInspectMainWindow_CloseRequestFcn(hObject, eventdata, handles)
 % hObject    handle to sigInspectMainWindow (see GCBO)
@@ -2560,5 +2568,60 @@ if(diff(xl)==1) % restored to 1s x-axis
     showSecond(guidata(obj))
 end
 
+function mainWindow_ScrollWheelFcn(hObject, eventdata)
+    handles=guidata(hObject); % TODO; how to get handles as parameter?
 
+    amount=eventdata.VerticalScrollAmount;
+    cnt=eventdata.VerticalScrollCount;
 
+    if isfield(handles,'keyModifiers') && ~isempty(handles.keyModifiers)
+        % zooming
+
+        % the unit zoom amount
+        unitAmountSignal=.3;
+
+        signalAx=handles.signalAxes;
+        spectrumAx=handles.spectroAxes;
+        cpSignal=get(signalAx,'CurrentPoint');
+        cpSignal=cpSignal(1,:);
+        xlimSignal=get(signalAx,'XLim');
+        ylimSignal=get(signalAx,'YLim');
+        inSignal=cpSignal(1)>=xlimSignal(1) && cpSignal(1)<=xlimSignal(2) && cpSignal(2)>=ylimSignal(1) && cpSignal(2)<=ylimSignal(2);
+        cpSpectrum=get(spectrumAx,'CurrentPoint');
+        cpSpectrum=cpSpectrum(1,:);
+        % xlim of the spectrum is the same as xlim of the signal
+        ylimSpectrum=get(spectrumAx,'YLim');
+        inSpectrum=cpSpectrum(1)>=xlimSignal(1) && cpSpectrum(1)<=xlimSignal(2) && cpSpectrum(2)>=ylimSpectrum(1) && cpSpectrum(2)<=ylimSpectrum(2);
+
+        if inSpectrum
+            % pretend we are in the signal axes
+            cpSignal=cpSpectrum;
+        end
+        if inSignal || inSpectrum
+            % horizontal zoom
+            if amount>0
+                a=unitAmountSignal*cnt*amount;
+                xl=[xlimSignal(1)-a*(cpSignal(1)-xlimSignal(1)) xlimSignal(2)+a*(xlimSignal(2)-cpSignal(1))];
+            else
+                a=unitAmountSignal*(-cnt)*amount;
+                a=a/(1+a);
+                xl=[xlimSignal(1)+a*(cpSignal(1)-xlimSignal(1)) xlimSignal(2)-a*(xlimSignal(2)-cpSignal(1))];
+            end
+            sec = getCurSec(handles);
+            xl=[max([xl(1) sec-1]) min([xl(2) sec])];
+            xlim(signalAx,xl);
+
+            % zoom spectrogram
+            if(~(handles.settings.ENABLE_WHOLE_SPECTROGRAM && get(handles.spectroWholeChck,'Value'))) || ...
+            get(handles.spectroChck,'Value') && handles.settings.WHOLE_SPECTROGRAM_SHOW_RECT
+                xlim(spectrumAx,xl);
+            end
+        end
+    else
+        % move forward / backward in the signal
+        if cnt>0
+            handles=prevSecond(handles);
+        else
+            handles=nextSecond(handles);
+        end
+    end
