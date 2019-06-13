@@ -273,7 +273,7 @@ function handles=sigInspectInit(handles, vararg)
     handles.internal.MaxChannels=10;
     handles.internal.MaxArtifactTypes=6;
     handles.internal.CheckboxLimitYPos=[.265 .947];
-    handles.internal.CheckboxPos=[.96 NaN .02 .025]; % checkbox x-pos ypos width height - for automatic generation of checkboxes
+    handles.internal.CheckboxPos=[.973 NaN .025 .025]; % checkbox x-pos ypos width height - for automatic generation of checkboxes
     % -----------------------
 
     
@@ -881,7 +881,8 @@ function redrawSpectrogram(handles,forceRedraw,initialize)
         % show x axis on the top
         %set(ah,'Box','off','XAxisLocation','top');
         set(ah,'Box','off','XAxisLocation','top','XTick',[]);
-        
+        set(ah,'FontSize',8);
+       
         % hide signal xtic and x axis
         %set(sh,'XTick',[]);%,'XTickLabel',[]);
             
@@ -1967,10 +1968,14 @@ function gainEdit_Callback(hObject, eventdata, handles)
 % hObject    handle to gainEdit (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
+newVal=str2double(get(handles.gainEdit,'String'));
+newVal = max(newVal,get(handles.gainSlider,'Min'));
+newVal = min(newVal,get(handles.gainSlider,'Max'));
 
-% Hints: get(hObject,'String') returns contents of gainEdit as text
-%        str2double(get(hObject,'String')) returns contents of gainEdit as a double
-
+set(handles.gainEdit,'String',newVal);
+set(handles.gainEdit,'Value', newVal);
+set(handles.gainSlider,'Value', newVal);
+redraw(handles,0); % 0=do not adapt gain automatically
 
 % --- Executes during object creation, after setting all properties.
 function gainEdit_CreateFcn(hObject, eventdata, handles)
