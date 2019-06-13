@@ -120,6 +120,7 @@ handles.settings.REVERSE_CHANNEL_ORDER = 1;                                 % 0:
 handles.settings.CHANNELS_SAME_COLOR = 0;                                   % 0: use different color for each channel (see CHANNEL_COLORS) 1: use same color for all channels (first color from CHANNEL_COLORS)
 handles.settings.CHANNEL_COLORS = {[0,0.447,0.741],...                      % cell array of channel colors in time series plot, if there are more channels than colors, colors are repeated. First color used if CHANNELS_SAME_COLOR=1
     [0.85,0.325,0.098],[0.929,0.694,0.125],[0.494,0.184,0.556],[0.466,0.674,0.188],[0.301,0.745,0.933],[0.635,0.078,0.184]};
+handles.settings.CHANNEL_CHECKBOX_HIGHLIGHT_COLOR = [0.9255,0.8392,0.8392]; % highlight channel checkbox with contrasting background, set 0.94*[1 1 1] for no highlight
 
 % audio
 handles.settings.START_WITH_SOUND_ON = 0;                                   % start with sound turned on
@@ -177,22 +178,32 @@ function handles=sigInspectInit(handles, vararg)
     handles.quitNow = 0;
     % -- loading data from artifactCatalog - transferred from catalogAnnotator
     if(isempty(vararg))
-         disp('sigInspect: *.mat file with signal(s) in cell array variable signal, signals or data')         
+         disp('sigInspect: select a *.csv or *.mat file with signal(s) in cell array variable signal, signals or data')         
          while(isempty(handles.interface))
             % select signal using gui dialog
-            [fileName, pathName, fileIndex] = uigetfile('*.mat','sigInspect: Select *.mat file with signal(s)');
+            [fileName, pathName, fileIndex] = uigetfile({'*.mat'},'sigInspect: Select a *.mat file with signal(s)');
             filePath = [pathName fileName];
             
-            if(~ischar(fileName))            
-                h=errordlg(['sigInspect can not start without a signal - please select mat file with signals or provide signals or interface as an input parameter'],'can not start without signals', 'modal');
+            [~,~,ext] = fileparts(fileName);
+            
+            isMat =  strcmpi(ext,'.mat');
+            isCsv =  strcmpi(ext,'.csv');
+            
+            if(~ischar(fileName) || ~(isMat || isCsv))            
+                h=errordlg(['sigInspect can not start without a signal - please select a *.csv or *.mat file with signals or provide signals or interface as an input parameter'],'can not start without signals', 'modal');
                 waitfor(h)
                 handles.quitNow=1;
                 return
             end
             
+            
             try
                 % load file, leave all settings at default values
-                handles.interface=sigInspectDataBasic(filePath);
+                if(isMat)
+                    handles.interface=sigInspectDataBasic(filePath);
+                elseif(isCsv)
+                    handles.interface=sigInspectDataCsv(filePath);
+                end
             catch err
 %                 % continue until a proper file is loaded
 %                 h=errordlg([err.message '\n choose another file'], err.identifier, 'modal');
@@ -262,7 +273,7 @@ function handles=sigInspectInit(handles, vararg)
     handles.internal.MaxChannels=10;
     handles.internal.MaxArtifactTypes=6;
     handles.internal.CheckboxLimitYPos=[.265 .947];
-    handles.internal.CheckboxPos=[.96 NaN .034 .042]; % checkbox x-pos and size - for automatic generation of checkboxes
+    handles.internal.CheckboxPos=[.96 NaN .02 .025]; % checkbox x-pos ypos width height - for automatic generation of checkboxes
     % -----------------------
 
     
@@ -1577,29 +1588,46 @@ function dispAnnotation(handles)
     
     
 
-function toggleChannel(handles,channel)
+function toggleChannel(handles,channel,newVal,noRedraw)
     % change state of given channel selector
-        
+    % if newVal not provided - toggles current state
+      
+    % ignore num keys above currently set number of channels
     if(channel>handles.settings.PLOT_CHANNELS)
-        % ignore num keys above currently set number of channels
         return
     end
-   
+
     hndl = handles.(sprintf('ch%dChck',channel));
-    val =  get(hndl,'Value');
     
+    % new val - eiter from the argument or negation of current state
+    if(nargin<3 || isempty(newVal))
+        newVal = ~get(hndl,'Value');
+    end
+ 
+    % if checkbox enabled - toggle value
     if(strcmp(get(hndl,'Enable'),'on'))
-        set(hndl,'Value',~val);
+        set(hndl,'Value',newVal);
     else
         % not possible (disabled)
-%         playBeep(handles);
+    %  playBeep(handles);
     end
+        
+    % set background color
+    if(newVal)
+        bgCol = handles.settings.CHANNEL_CHECKBOX_HIGHLIGHT_COLOR;
+    else
+        bgCol = 0.94*[1 1 1];
+    end
+    set(hndl,'Background',bgCol)
     
-    if(get(handles.hideChck, 'Value'))
-        redraw(handles,0)
+    % redrew rest of the gui
+    if(nargin<4 || ~noRedraw)
+        if(get(handles.hideChck, 'Value'))
+            redraw(handles,0)
+        end
+        dispAnnotation(handles);
+        enableDisableSpectroChck(handles);
     end
-    dispAnnotation(handles);
-    enableDisableSpectroChck(handles);
 
     
 
@@ -1621,14 +1649,7 @@ function selectAllChannels(handles,nval,noSpectRedraw)
       
     
   for ii=1:nChans
-    hndl = handles.(sprintf('ch%dChck',ii));
-%     if(strcmp(get(hndl,'Enable'),'on'))
-        % channel enabled
-        set(hndl,'Value',nval);
-        if(nval)
-            set(hndl,'Enable','on');
-        end
-%     end
+      toggleChannel(handles,ii,nval,1)
   end    
    if(get(handles.hideChck, 'Value'))
         redraw(handles,0)
@@ -1639,20 +1660,15 @@ function selectAllChannels(handles,nval,noSpectRedraw)
 function invertChannelSelection(handles)
 % invert channel selection
 %   row = getCurSig(handles); %get(handles.signalSelect,'Value');   
-  nChans = getCurChan(handles);      
-    
+  nChans = getCurChan(handles);       
   for ii=1:nChans
-    hndl = handles.(sprintf('ch%dChck',ii));
-%     if(strcmp(get(hndl,'Enable'),'on'))
-        % channel enabled
-        set(hndl,'Value',~get(hndl,'Value'));
-%     end
+      toggleChannel(handles,ii,[],1)
   end    
-   if(get(handles.hideChck, 'Value'))
-        redraw(handles,0)
-   end
-   dispAnnotation(handles);
-   enableDisableSpectroChck(handles);
+  if(get(handles.hideChck, 'Value'))
+      redraw(handles,0)
+  end
+  dispAnnotation(handles);
+enableDisableSpectroChck(handles);
   
 function sndOn = getSoundState(handles)
     sndOn = get(handles.soundOnChck,'Value');
@@ -2249,8 +2265,11 @@ delete(hObject)
 % --- universal channel checkbox callback
 function chanChckCallback(hObject, callbackdata)
 handles=guidata(hObject);
-dispAnnotation(handles)
-enableDisableSpectroChck(handles);
+channelNum=str2double(callbackdata.Source.String);
+% call toggleChannel to solve redraw etc with the requested value
+toggleChannel(handles,channelNum,callbackdata.Source.Value)
+% dispAnnotation(handles)
+% enableDisableSpectroChck(handles);
 
 
 % --- Executes on key press with focus on sigInspectMainWindow or any of its controls.
@@ -2272,7 +2291,6 @@ function sigInspectMainWindow_WindowKeyReleaseFcn(hObject, eventdata, handles)
 %	Modifier: name(s) of the modifier key(s) (i.e., control, shift) released
 % handles    structure with handles and user data (see GUIDATA)
 keyReleaseHandler(eventdata, handles)
-
 
 % --- Executes on button press in soundOnChck.
 function soundOnChck_Callback(hObject, eventdata, handles)
