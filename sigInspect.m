@@ -121,6 +121,7 @@ handles.settings.CHANNELS_SAME_COLOR = 0;                                   % 0:
 handles.settings.CHANNEL_COLORS = {[0,0.447,0.741],...                      % cell array of channel colors in time series plot, if there are more channels than colors, colors are repeated. First color used if CHANNELS_SAME_COLOR=1
     [0.85,0.325,0.098],[0.929,0.694,0.125],[0.494,0.184,0.556],[0.466,0.674,0.188],[0.301,0.745,0.933],[0.635,0.078,0.184]};
 handles.settings.CHANNEL_CHECKBOX_HIGHLIGHT_COLOR = [0.9255,0.8392,0.8392]; % highlight channel checkbox with contrasting background, set 0.94*[1 1 1] for no highlight
+handles.settings.PLOT_VLINE_AT_STARTEND_OF_SIGNAL = 1;                      % plot vertical lines at the start and end of all signals
 
 % audio
 handles.settings.START_WITH_SOUND_ON = 0;                                   % start with sound turned on
@@ -131,6 +132,8 @@ handles.settings.INTERNAL_PLAYER_DBG=0;                                         
 handles.settings.PLAY_SOUND_IN_SYNC = 0;
 handles.settings.CHECK_CONST_SAMPLES=1;                                     % check signal for constant samples - visualize them in color
 
+% UI and control
+handles.settings.SEC_PG_SKIP = 10;                                          % ctrl-pgup and ctrl-pgdn keys skip this many seconds
 
 % annotation - loading checks
 handles.settings.ANNOT_DEFAULT_FILENAME = 'sigInspectAnnot##.mat';          % default name for sigInspect annotation when save button is hit. ## is replaced by current date and time
@@ -585,7 +588,7 @@ function redraw(handles,adaptGainToSignal)
         
         % constant samples
         if(handles.settings.CHECK_CONST_SAMPLES)
-            emptyInds= constSamples(sig,handles.curSigLenSec,0.01);
+            emptyInds= constSamples(sig,handles.curSigLenSec,0.001);
             if(any(emptyInds))
                 plot(t(emptyInds),sig(emptyInds)+yShift,'r.','MarkerSize',1)
             end
@@ -597,6 +600,12 @@ function redraw(handles,adaptGainToSignal)
         xlm = [0 handles.curSigLenSec];
         line(xlm,yShift+thr*[1 1],'Color','black')
         line(xlm,yShift-thr*[1 1],'Color','black')                
+    end
+
+    % vertical line at the end of all signals
+    if(handles.settings.PLOT_VLINE_AT_STARTEND_OF_SIGNAL)
+        line([0 0],ylim,'Color','r','lineWidth',2)
+        line(handles.curSigLenSec*[1 1],ylim,'Color','r','lineWidth',2)
     end
     
 %     xlim(sec+[-1 0])
@@ -1740,13 +1749,17 @@ function nextBtn_Callback(hObject, eventdata, handles)
 handles = nextSignal(handles);
 guidata(handles.sigInspectMainWindow,handles);
 
-function handles = nextSignal(handles)
+function handles = nextSignal(handles, sec)
     current = getCurSig(handles); %get(handles.signalSelect,'Value');
     if(current<handles.N)
 %         str = get(handles.signalSelect,'String');
 %         next = str{current+1};
         next = current+1;
         handles = setSignal(handles,next,1);        
+        if(nargin<2)
+            sec=1;
+        end
+        set(handles.secondSelect,'Value',sec);
     else
         handles=playBeep(handles);
     end
@@ -1764,13 +1777,13 @@ function handles = setSignal(handles,sigId,sec)
 %     prevSigId = getCurSig(handles);
 %     
     set(handles.signalSelect,'Value',sigId);
-%     try
+    try
         handles = loadSignals(handles);    
-%     catch
-%         errordlg(['Error loading signal: ' handles.signalIds{sigId}],'Data load error')
-%         set(handles.signalSelect,'Value',prevSigId);
-%         return;
-%     end
+    catch
+         errordlg(['Error loading signal: ' handles.signalIds{sigId}],'Data load error')
+         set(handles.signalSelect,'Value',prevSigId);
+         return;
+     end
     
     % check whether annot is initialized, if not, do it
     if(isempty(handles.annotation{sigId}))
@@ -1802,11 +1815,15 @@ function prevBtn_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 prevSignal(handles)
 
-function handles=prevSignal(handles)
+function handles=prevSignal(handles, sec)
 current = get(handles.signalSelect,'Value');
 if(current>1)
     prev = current-1;
     handles=setSignal(handles,prev,-1);
+    if(nargin<2)
+        sec =handles.curSigLenSec;
+    end
+    set(handles.secondSelect,'Value',sec);
 else
     % beep
     handles=playBeep(handles);
@@ -2047,18 +2064,24 @@ function nextSecBtn_Callback(hObject, eventdata, handles)
 handles = nextSecond(handles);
 guidata(handles.sigInspectMainWindow,handles);
 
-function handles = nextSecond(handles)
+function handles = nextSecond(handles, nSec)
 curSec = getCurSec(handles);
+
+if(nargin<2)
+    nSec = 1;
+end
+
+% if we are not at the end, go forward, max to the end
 if(curSec<handles.curSigLenSec)
-    set(handles.secondSelect,'Value',curSec+1);
+    newSec = min(curSec+nSec,handles.curSigLenSec);
+    set(handles.secondSelect,'Value',newSec);
     showSecond(handles)
 else
-    % beep and go to previous signal
+    % beep and go to the next signal
     handles=playBeep(handles);
     if(getCurSig(handles)<handles.N)
         % if next sig. available - move to it
         handles = nextSignal(handles);
-        set(handles.secondSelect,'Value',1);
     end    
 end
 handles = playSound(handles);
@@ -2075,16 +2098,22 @@ handles = prevSecond(handles);
 guidata(handles.sigInspectMainWindow,handles)
 
 
-function handles = prevSecond(handles)
+function handles = prevSecond(handles, nSec)
     curSec = getCurSec(handles);
+    if(nargin<2)
+        nSec=1;
+    end
+    
+    % if we are not at the first second, go back nSec, stop at the first
+    % second
     if(curSec>1)
-        set(handles.secondSelect,'Value',curSec-1);
+        newSec = max(curSec-nSec, 1);
+        set(handles.secondSelect,'Value',newSec);
     else
-        % beep and go to previous signal
+        % beep and go to the last second of the previous signal
         handles=playBeep(handles);
         if(getCurSig(handles)>1)
             handles = prevSignal(handles);
-            set(handles.secondSelect,'Value',handles.curSigLenSec);
         end
     end
     showSecond(handles) 
@@ -2092,9 +2121,18 @@ function handles = prevSecond(handles)
     
     nrgChck(nargout,'prevSecond');
     
-
-        
-
+% go to the first second of the signal ('home')
+function handles = firstSecond(handles)        
+  set(handles.secondSelect,'Value',1);
+  showSecond(handles) 
+  nrgChck(nargout,'firstSecond');
+  
+% go to the last second of the signal ('end')
+function handles = lastSecond(handles)
+  set(handles.secondSelect,'Value',handles.curSigLenSec);
+  showSecond(handles) 
+  nrgChck(nargout,'lastSecond');
+  
 
 % --- Executes on button press in SaveBtn.
 function SaveBtn_Callback(hObject, eventdata, handles)
@@ -2118,10 +2156,25 @@ switch(evt.Key)
         handles=prevSecond(handles);
    
     case 'pagedown'
-        handles=nextSecond(handles);
+        if(ismember('control',handles.keyModifiers))
+            handles=nextSecond(handles, handles.settings.SEC_PG_SKIP);
+        else
+            handles = nextSignal(handles);
+        end
     case 'pageup'
-        handles=prevSecond(handles);
-     
+        if(ismember('control',handles.keyModifiers))
+            handles=prevSecond(handles,handles.settings.SEC_PG_SKIP);
+        else
+            handles=prevSignal(handles,1);
+        end
+
+    case 'home'
+        handles=firstSecond(handles);
+    case 'end'
+        handles=lastSecond(handles);
+
+        
+        
     case 'numpad1'
        toggleChannel(handles,1)
     case 'numpad2'
@@ -2648,3 +2701,28 @@ function mainWindow_ScrollWheelFcn(hObject, eventdata)
             handles=nextSecond(handles);
         end
     end
+    
+    
+ function focusToFig(ObjH, EventData)  %#ok<INUSD>
+% Move focus to figure
+% FocusToFig(ObjH, [DummyEventData])
+% INPUT:
+%   ObjH: Handle of a graphics object. It is tried to move the focus to the
+%         parent figure and making it the CurrentFigure of the root object.
+%   DummyEventData: The 2nd input is optional and ignored.
+%
+% Tested: Matlab 6.5, 7.7, 7.8, WinXP
+% Author: Jan Simon, Heidelberg, (C) 2009-2011
+if any(ishandle(ObjH))   % Catch no handle and empty ObjH
+   FigH = ancestor(ObjH, 'figure');
+   if strcmpi(get(ObjH, 'Type'), 'uicontrol')
+      set(ObjH, 'enable', 'off');
+      drawnow;
+      set(ObjH, 'enable', 'on');
+   end
+     % Methods according to the documentation (does not move the focus for
+     % keyboard events under Matlab 5.3, 6.5, 2008b, 2009a):
+     figure(FigH);
+     set(0, 'CurrentFigure', FigH);
+end
+return;
