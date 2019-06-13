@@ -28,7 +28,7 @@ function varargout = sigInspect(varargin)
 
 % Edit the above text to modify the response to help sigInspect
 
-% Last Modified by GUIDE v2.5 01-Apr-2019 16:51:50
+% Last Modified by GUIDE v2.5 13-Jun-2019 17:44:01
 
 
 % Begin initialization code - DO NOT EDIT
@@ -1819,9 +1819,12 @@ function handles=prevSignal(handles, sec)
 current = get(handles.signalSelect,'Value');
 if(current>1)
     prev = current-1;
-    handles=setSignal(handles,prev,-1);
     if(nargin<2)
-        sec =handles.curSigLenSec;
+        sec = -1;
+    end
+    handles=setSignal(handles,prev,sec);    
+    if(sec==-1)
+        sec = handles.curSigLenSec;
     end
     set(handles.secondSelect,'Value',sec);
 else
@@ -2726,3 +2729,17 @@ if any(ishandle(ObjH))   % Catch no handle and empty ObjH
      set(0, 'CurrentFigure', FigH);
 end
 return;
+
+
+% --- Executes on key press with focus on signalSelect and none of its controls.
+function signalSelect_KeyPressFcn(hObject, eventdata, handles)
+% hObject    handle to signalSelect (see GCBO)
+% eventdata  structure with the following fields (see MATLAB.UI.CONTROL.UICONTROL)
+%	Key: name of the key that was pressed, in lower case
+%	Character: character interpretation of the key(s) that was pressed
+%	Modifier: name(s) of the modifier key(s) (i.e., control, shift) pressed
+% handles    structure with handles and user data (see GUIDATA)
+switch(eventdata.Key)
+    case {'pagedown','pageup'}
+        focusToFig(hObject)
+end
