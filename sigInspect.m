@@ -165,78 +165,50 @@ end
 
 
 
-
-
 % global figure initialization
 function handles=sigInspectInit(handles, vararg)
-    % ------ load interface from input arguments or data from file
-
-    % addPath
-    if(~exist('sigInspectDataBasic.m','file'))
+    
+    % Add path if sigInspectDataBasic.m is not in the current path
+    if (~exist('sigInspectDataBasic.m', 'file'))
         sigInspectAddpath;
     end
-    
-    % data interface
-    handles.interface=[];
-    handles.quitNow = 0;
-    % -- loading data from artifactCatalog - transferred from catalogAnnotator
-    if(isempty(vararg))
-         disp('sigInspect: select a *.csv or *.mat file with signal(s) in cell array variable signal, signals or data')         
-         while(isempty(handles.interface))
-            % select signal using gui dialog
-            [fileName, pathName, fileIndex] = uigetfile({'*.mat'},'sigInspect: Select a *.mat file with signal(s)');
-            filePath = [pathName fileName];
-            
-            [~,~,ext] = fileparts(fileName);
-            
-            isMat =  strcmpi(ext,'.mat');
-            isCsv =  strcmpi(ext,'.csv');
-            
-            if(~ischar(fileName) || ~(isMat || isCsv))            
-                h=errordlg(['sigInspect can not start without a signal - please select a *.csv or *.mat file with signals or provide signals or interface as an input parameter'],'can not start without signals', 'modal');
-                waitfor(h)
-                handles.quitNow=1;
-                return
-            end
-            
-            
-            try
-                % load file, leave all settings at default values
-                if(isMat)
-                    handles.interface=sigInspectDataBasic(filePath);
-                elseif(isCsv)
-                    handles.interface=sigInspectDataCsv(filePath);
-                end
-            catch err
-%                 % continue until a proper file is loaded
-%                 h=errordlg([err.message '\n choose another file'], err.identifier, 'modal');
-%                 waitfor(h)
-%                 continue
-                  % continue until a proper file is loaded
-                bt=questdlg([err.message '> choose another file?'], err.identifier, 'Yes','Quit','Yes');
-                switch(bt)
-                    case 'Yes'
-                        continue
-                    case 'Quit'
-                        handles.quitNow=1;
-                        return
-                end
- 
-            end            
-         end
 
-    else
-        tmp = vararg{1};
-        if(isa(tmp,'sigInspectDataInterface'))
-            % user provided data interface
-            handles.interface=tmp;
-        else
-            handles.interface=sigInspectDataBasic(tmp);
-            if(length(vararg)>1 && ~isempty(vararg{2}) && isnumeric(vararg{2}))
+    handles.interface = [];
+    handles.quitNow = 0; % Flag to indicate if the user decides to quit
+
+    % Loop until a valid interface is loaded or the user decides to quit
+    attemptCount = 0; % To prevent infinite loops
+    while (isempty(handles.interface) && ~handles.quitNow  && attemptCount < 5)
+        % User-provided data interface or data file
+        if ~isempty(vararg) && isempty(handles.interface)
+            tmp = vararg{1};
+            if isa(tmp, 'sigInspectDataInterface')
+                % User provided data interface directly
+                handles.interface = tmp;
+            else
+                % User provided file path or matrix as the first argument
+                handles = tryLoadingData(handles, vararg);
+            end
+            if ~isempty(vararg) && length(vararg) > 1 && ~isempty(vararg{2}) && isnumeric(vararg{2})
+                % User provided sampling frequency as the second argument
                 handles.interface.settings.SAMPLING_FREQ = vararg{2};
             end
         end
+        % No valid interface loaded yet, prompt user to select a file
+        if isempty(handles.interface)
+            handles = tryLoadingData(handles,vararg);
+        end
+        attemptCount = attemptCount + 1;
     end
+
+    if handles.quitNow
+        h = errordlg('Quitting sigInspect due to user action or error.', 'Quitting');
+        waitfor(h);
+        return;
+    end
+
+    % Additional initialization based on loaded interface
+    % (Place your existing logic here, if any)
     
     % TODO ---- -------------------------------------------------------------
     % automatic artifact button count
@@ -375,6 +347,49 @@ function handles=sigInspectInit(handles, vararg)
 
     % check call without parameters
     nrgChck(nargout,'init')
+
+function handles = tryLoadingData(handles, vararg)
+    samplingFreq = []; % Use default or prompt within class
+    % Check if vararg has file path or matrix as the first argument
+    if ~isempty(vararg)
+        tmp = vararg{1};
+        if ischar(tmp) || iscell(tmp) % File path or matrix provided
+            filePath = tmp;
+        end
+        if length(vararg) > 1 && isnumeric(vararg{2}) % Sampling frequency provided
+            samplingFreq = vararg{2};
+        end
+    else
+        [fileName, pathName] = uigetfile({'*.mat;*.csv;*.txt', 'Supported Files (*.mat, *.csv, *.txt)'; ...
+                                         '*.*', 'All Files (*.*)'}, ...
+                                         'sigInspect: Select a data file with signal(s)');
+        if isequal(fileName, 0)
+            disp('User selected Cancel');
+            handles.quitNow = 1;
+            return;
+        end
+        filePath = fullfile(pathName, fileName);
+    end
+
+    % Attempt to load the file
+    try
+        [~, ~, ext] = fileparts(filePath);
+        
+        if strcmpi(ext, '.csv') || strcmpi(ext, '.txt')
+            % Pass along the vararg arguments
+            handles.interface = sigInspectDataCsv(filePath, samplingFreq);
+        elseif strcmpi(ext, '.mat')
+            % Similar handling for .mat files or other data interfaces
+            handles.interface = sigInspectDataBasic(filePath);
+        end
+    catch err
+        bt = questdlg([err.message ' Would you like to choose another file?'], ...
+                      'File Load Error', 'Yes', 'Quit', 'Yes');
+        if strcmp(bt, 'Quit')
+            handles.quitNow = 1;
+            return;
+        end
+    end
 
 % updates annotation buttons to match current artifact types
 function handles = initArtifButtons(handles)

@@ -104,7 +104,7 @@ classdef sigInspectDataBasic < sigInspectDataInterface
             end
             
             if(isempty(strfind(filePath,'.mat')))
-                error('only files *.mat supported by sigInspectDataBasic')
+                error('only files *.mat supported by sigInspectDataBasic, for *.csv or *.txt run sigInspectDataCsv')
             end
 
             tmp=load(filePath);
