@@ -12,3 +12,5 @@
 *.bbl
 /DAO
 /tests
+/data
+/manual
