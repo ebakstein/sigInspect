@@ -1480,6 +1480,72 @@ function handles = saveAll(handles)
     nrgChck(nargout,'saveAll');
 
 
+function annot = annotBin2Num(annot)
+% annot = annotBin2Num(annot)
+% compresses single position's annotation to 0:2^N+1 according to artifact
+% index
+% E. Bakstein 2014-01-15
+
+ao = annot;
+annot = zeros(size(annot,1),size(annot,2));
+
+for ii = 1:size(ao,3)
+    annot(:,:) = annot(:,:) + 2^(ii-1).*ao(:,:,ii);
+end
+
+
+function exportAnnotationsToCsv(handles)
+    % Initialize an empty array to store all numeric annotations
+    allNumericAnnotations = [];
+    % Iterate through each signal's annotations in the cell array     
+    for idx = 1:length(handles.annotation)
+        % Convert annotations from binary to numeric interpretation
+        numericAnnotations = annotBin2Num(handles.annotation{idx});
+
+        % Transpose numericAnnotations to have channels in columns and seconds in rows
+        numericAnnotations = numericAnnotations';
+
+        % Concatenate the current signal's numeric annotations below the previous ones
+        if idx == 1
+            allNumericAnnotations = numericAnnotations;
+        else
+            % Ensure the matrices have the same number of columns before concatenation
+            if size(numericAnnotations, 2) > size(allNumericAnnotations, 2)
+                % Pad allNumericAnnotations with NaNs to match the size
+                paddingSize = size(numericAnnotations, 2) - size(allNumericAnnotations, 2);
+                allNumericAnnotations(:, end+1:end+paddingSize) = NaN;
+            elseif size(numericAnnotations, 2) < size(allNumericAnnotations, 2)
+                % Pad numericAnnotations with NaNs to match the size
+                paddingSize = size(allNumericAnnotations, 2) - size(numericAnnotations, 2);
+                numericAnnotations(:, end+1:end+paddingSize) = NaN;
+            end
+            allNumericAnnotations = [allNumericAnnotations; numericAnnotations];
+        end
+    end
+
+    % Generate default filename using current date and time     
+    filedatetime = datestr(now, 'yyyy-mm-dd-HHMMss');     
+    defaultFilename = ['Annotations_' filedatetime '.csv'];
+
+    % Create column names based on the number of channels
+    columnNames = arrayfun(@(x) ['Channel_' num2str(x)], 1:size(allNumericAnnotations, 2), 'UniformOutput', false);
+    
+    % Convert the annotations matrix to a table with column names
+    annotationsTable = array2table(allNumericAnnotations, 'VariableNames', columnNames);
+
+    % Prompt user for location and name of the CSV file to save
+    [file, path] = uiputfile('*.csv', 'Save Annotations As', defaultFilename);
+    if isequal(file, 0) || isequal(path, 0)
+        disp('User canceled export.');
+        return;
+    end
+    filepath = fullfile(path, file);
+    
+    % Save numeric annotations to CSV
+    writetable(annotationsTable, filepath);
+    disp(['Annotations exported to CSV: ', filepath]);
+
+
 function handles = annotateCurrent(handles, annotNum)
 %     ch = str2num(get(get(handles.chSelect,'SelectedObject'),'String'));
     % check if no out-of-bounds annotation is mistakenly requested
@@ -2410,8 +2476,65 @@ function saveTool_ClickedCallback(hObject, eventdata, handles)
 % hObject    handle to saveTool (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-handles = saveAll(handles);
-guidata(handles.sigInspectMainWindow,handles);
+% Define the saving options
+options = {'Save automatically', 'Save as', 'Export to csv file with numeric representation'};
+[index, value] = listdlg('PromptString', 'Select a saving option:', ...
+                         'SelectionMode', 'single', ...
+                         'ListString', options);
+
+% Proceed based on the user's choice
+if value == 1 % User made a selection
+    switch index
+        case 1
+            disp('Option Save automatically selected');
+            handles = saveAll(handles);
+        case 2
+            % Implement the saving logic for "Save as"
+            disp('Option Save as selected');
+        
+            % Generate default filename using current date and time
+            filedatetime = datestr(now, 'yyyy-mm-dd-HHMMss');
+            defaultFilename = strrep(handles.settings.ANNOT_DEFAULT_FILENAME, '##', filedatetime);
+            
+            % Open a "Save As" dialog box with the default filename
+            [file, path] = uiputfile({
+                '*.mat', 'MAT-files (*.mat)';
+                '*.*', 'All Files (*.*)'
+            }, 'Save Data As', defaultFilename);
+        
+            if isequal(file, 0) || isequal(path, 0)
+                disp('User canceled save.');
+            else
+                % Construct full file path
+                filepath = fullfile(path, file);
+        
+                % Save the data
+                annotation = handles.annotation;
+                signalIds = handles.signalIds;
+                interfaceClass = class(handles.interface);
+                artifactTypes = handles.settings.ARTIFACT_TYPES;
+        
+                % Save the specified data to the chosen filepath
+                save(filepath, 'annotation', 'signalIds', 'interfaceClass', 'artifactTypes');
+        
+                % Display a message indicating success
+                msg = ['Data saved to: ', filepath];
+                msgbox(msg, 'modal');
+                disp(msg);
+        
+                % Indicate no unsaved changes
+                handles.anyChanges = false;
+            end
+        case 3
+            % Implement the saving logic for Option 3
+            disp('Option Export to CSV selected');
+            exportAnnotationsToCsv(handles);
+    end
+    guidata(handles.sigInspectMainWindow, handles);
+else
+    % User canceled the dialog or closed it without making a selection
+    disp('Saving canceled');
+end
 
 
 % --------------------------------------------------------------------
