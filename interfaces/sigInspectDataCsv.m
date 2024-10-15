@@ -7,6 +7,7 @@ classdef sigInspectDataCsv < sigInspectDataInterface
     properties
         dirPath='';
     end
+  
     methods
         % constructor - just store the path, set settings
         function obj=sigInspectDataCsv(dirPath, varargin)
@@ -20,10 +21,13 @@ classdef sigInspectDataCsv < sigInspectDataInterface
                 samplingFreq = varargin{1};
             end
 
+            % if ~isempty(obj.settings.SAMPLING_FREQ)
+            % TODO check the samplingFreq 
+
             % If sampling frequency is still empty, prompt the user
             if isempty(samplingFreq)
                 % If the second argument is not provided or not numeric, prompt the user
-                prompt = {'Enter sampling frequency:'};
+                prompt = {'Enter sampling frequency(Hz):'};
                 dlgtitle = 'Input';
                 dims = [1 35];
                 definput = {'12000'}; % Default value
@@ -52,6 +56,7 @@ classdef sigInspectDataCsv < sigInspectDataInterface
             end
         end
         
+        % TODO signalId same as in sigInspectDataBasic
         % read signals based on signalId (=filename)
         function [signals, chInfo] = getSignalsById(obj, signalId)
             if exist(obj.dirPath, 'file') == 2 % If dirPath is actually a file path
