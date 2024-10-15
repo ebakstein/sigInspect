@@ -28,7 +28,7 @@ function varargout = sigInspect(varargin)
 
 % Edit the above text to modify the response to help sigInspect
 
-% Last Modified by GUIDE v2.5 13-Jun-2019 17:44:01
+% Last Modified by GUIDE v2.5 07-Jul-2024 17:28:35
 
 
 % Begin initialization code - DO NOT EDIT
@@ -170,6 +170,10 @@ function handles=sigInspectInit(handles, vararg)
     
     % Add path if sigInspectDataBasic.m is not in the current path
     if (~exist('sigInspectDataBasic.m', 'file'))
+        sigInspectAddpath;
+    end
+
+    if (~exist('sigInspectDataCsv.m', 'file'))
         sigInspectAddpath;
     end
 
@@ -355,11 +359,14 @@ function handles = tryLoadingData(handles, vararg)
         tmp = vararg{1};
         if ischar(tmp) || iscell(tmp) % File path or matrix provided
             filePath = tmp;
+            disp(filePath);
         end
         if length(vararg) > 1 && isnumeric(vararg{2}) % Sampling frequency provided
             samplingFreq = vararg{2};
         end
+        handles = loadData(handles, filePath, samplingFreq);
     else
+        % TODO folder selection
         [fileName, pathName] = uigetfile({'*.mat;*.csv;*.txt', 'Supported Files (*.mat, *.csv, *.txt)'; ...
                                          '*.*', 'All Files (*.*)'}, ...
                                          'sigInspect: Select a data file with signal(s)');
@@ -368,9 +375,12 @@ function handles = tryLoadingData(handles, vararg)
             handles.quitNow = 1;
             return;
         end
+
         filePath = fullfile(pathName, fileName);
+        handles = loadData(handles, filePath, samplingFreq);
     end
 
+function handles = loadData(handles, filePath, samplingFreq)
     % Attempt to load the file
     try
         [~, ~, ext] = fileparts(filePath);
@@ -1481,67 +1491,81 @@ function handles = saveAll(handles)
 
 
 function annot = annotBin2Num(annot)
-% annot = annotBin2Num(annot)
 % compresses single position's annotation to 0:2^N+1 according to artifact
 % index
 % E. Bakstein 2014-01-15
-
-ao = annot;
-annot = zeros(size(annot,1),size(annot,2));
-
-for ii = 1:size(ao,3)
-    annot(:,:) = annot(:,:) + 2^(ii-1).*ao(:,:,ii);
-end
-
-
-function exportAnnotationsToCsv(handles)
-    % Initialize an empty array to store all numeric annotations
-    allNumericAnnotations = [];
-    % Iterate through each signal's annotations in the cell array     
-    for idx = 1:length(handles.annotation)
-        % Convert annotations from binary to numeric interpretation
-        numericAnnotations = annotBin2Num(handles.annotation{idx});
-
-        % Transpose numericAnnotations to have channels in columns and seconds in rows
-        numericAnnotations = numericAnnotations';
-
-        % Concatenate the current signal's numeric annotations below the previous ones
-        if idx == 1
-            allNumericAnnotations = numericAnnotations;
-        else
-            % Ensure the matrices have the same number of columns before concatenation
-            if size(numericAnnotations, 2) > size(allNumericAnnotations, 2)
-                % Pad allNumericAnnotations with NaNs to match the size
-                paddingSize = size(numericAnnotations, 2) - size(allNumericAnnotations, 2);
-                allNumericAnnotations(:, end+1:end+paddingSize) = NaN;
-            elseif size(numericAnnotations, 2) < size(allNumericAnnotations, 2)
-                % Pad numericAnnotations with NaNs to match the size
-                paddingSize = size(allNumericAnnotations, 2) - size(numericAnnotations, 2);
-                numericAnnotations(:, end+1:end+paddingSize) = NaN;
-            end
-            allNumericAnnotations = [allNumericAnnotations; numericAnnotations];
-        end
+    
+    ao = annot;
+    annot = zeros(size(annot,1),size(annot,2));
+    
+    for ii = 1:size(ao,3)
+        annot(:,:) = annot(:,:) + 2^(ii-1).*ao(:,:,ii);
     end
 
-    % Generate default filename using current date and time     
-    filedatetime = datestr(now, 'yyyy-mm-dd-HHMMss');     
-    defaultFilename = ['Annotations_' filedatetime '.csv'];
+function exportAnnotationsToCsv(handles)
+    % Step 1: Determine the maximum number of channels
+    maxChannels = 0;
+    for idx = 1:length(handles.annotation)
+        numericAnnotations = annotBin2Num(handles.annotation{idx});
+        maxChannels = max(maxChannels, size(numericAnnotations, 1)); % Update maxChannels if current signal has more channels
+    end
+    disp(maxChannels);
 
-    % Create column names based on the number of channels
-    columnNames = arrayfun(@(x) ['Channel_' num2str(x)], 1:size(allNumericAnnotations, 2), 'UniformOutput', false);
-    
-    % Convert the annotations matrix to a table with column names
-    annotationsTable = array2table(allNumericAnnotations, 'VariableNames', columnNames);
+    % Initialize an empty cell array for all annotations
+    allAnnotations = {};
+
+    % Time step assumption (modify as necessary)
+    timeStepInSeconds = 1;
+
+    for idx = 1:length(handles.annotation)
+        numericAnnotations = annotBin2Num(handles.annotation{idx});
+        numericAnnotations = numericAnnotations'; % Assuming channels in columns
+        
+        % Step 2: Prepare data with consistent width
+        if size(numericAnnotations, 2) < maxChannels
+            % Pad with NaN to match the maximum number of channels
+            numericAnnotations(:, end+1:maxChannels) = NaN;
+        end
+
+        % Assuming signalId can be derived or is equivalent to idx here
+        signalId = idx;
+        
+        % Create a time vector for the current signal's annotations
+        timeInSeconds = (1:timeStepInSeconds:(size(numericAnnotations, 1)))';
+        
+        % Prepare the matrix for current signal with signalId, time, and annotations
+        currentSignalAnnotations = [repmat(signalId, length(timeInSeconds), 1), timeInSeconds, numericAnnotations];
+        
+        % Convert current signal's matrix to cell array to replace NaN with empty strings later
+        currentSignalCell = num2cell(currentSignalAnnotations);
+        
+        % Replace NaN with empty cells ('')
+        [rows, cols] = find(isnan(currentSignalAnnotations));
+        for i = 1:length(rows)
+            currentSignalCell{rows(i), cols(i)} = '';
+        end
+        
+        % Concatenate the current signal's annotations below the previous ones
+        allAnnotations = [allAnnotations; currentSignalCell]; % Using cell array concatenation
+    end
+
+    % Create column names
+    columnNames = ['SignalId', 'TimeInSeconds', arrayfun(@(x) ['Channel_' num2str(x)], 1:size(numericAnnotations, 2), 'UniformOutput', false)];
+
+    % Convert the annotations cell array to a table with column names
+    annotationsTable = cell2table(allAnnotations, 'VariableNames', columnNames);
 
     % Prompt user for location and name of the CSV file to save
+    filedatetime = datestr(now, 'yyyy-mm-dd-HHMMss');
+    defaultFilename = ['Annotations_' filedatetime '.csv'];
     [file, path] = uiputfile('*.csv', 'Save Annotations As', defaultFilename);
     if isequal(file, 0) || isequal(path, 0)
         disp('User canceled export.');
         return;
     end
     filepath = fullfile(path, file);
-    
-    % Save numeric annotations to CSV
+
+    % Save annotations to CSV
     writetable(annotationsTable, filepath);
     disp(['Annotations exported to CSV: ', filepath]);
 
@@ -1765,6 +1789,7 @@ function sndOn = getSoundState(handles)
     sndOn = get(handles.soundOnChck,'Value');
       
 function channels = getSelectedChannels(handles)
+% TODO
 % channels = getSelectedChannels(handles) - returns ids of selected channels
 fixChannelSelection(handles)
 channels = [];
@@ -2476,171 +2501,225 @@ function saveTool_ClickedCallback(hObject, eventdata, handles)
 % hObject    handle to saveTool (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-% Define the saving options
-options = {'Save automatically', 'Save as', 'Export to csv file with numeric representation'};
-[index, value] = listdlg('PromptString', 'Select a saving option:', ...
-                         'SelectionMode', 'single', ...
-                         'ListString', options);
-
-% Proceed based on the user's choice
-if value == 1 % User made a selection
-    switch index
-        case 1
-            disp('Option Save automatically selected');
-            handles = saveAll(handles);
-        case 2
-            % Implement the saving logic for "Save as"
-            disp('Option Save as selected');
-        
-            % Generate default filename using current date and time
-            filedatetime = datestr(now, 'yyyy-mm-dd-HHMMss');
-            defaultFilename = strrep(handles.settings.ANNOT_DEFAULT_FILENAME, '##', filedatetime);
-            
-            % Open a "Save As" dialog box with the default filename
-            [file, path] = uiputfile({
-                '*.mat', 'MAT-files (*.mat)';
-                '*.*', 'All Files (*.*)'
-            }, 'Save Data As', defaultFilename);
-        
-            if isequal(file, 0) || isequal(path, 0)
-                disp('User canceled save.');
-            else
-                % Construct full file path
-                filepath = fullfile(path, file);
-        
-                % Save the data
-                annotation = handles.annotation;
-                signalIds = handles.signalIds;
-                interfaceClass = class(handles.interface);
-                artifactTypes = handles.settings.ARTIFACT_TYPES;
-        
-                % Save the specified data to the chosen filepath
-                save(filepath, 'annotation', 'signalIds', 'interfaceClass', 'artifactTypes');
-        
-                % Display a message indicating success
-                msg = ['Data saved to: ', filepath];
-                msgbox(msg, 'modal');
-                disp(msg);
-        
-                % Indicate no unsaved changes
-                handles.anyChanges = false;
-            end
-        case 3
-            % Implement the saving logic for Option 3
-            disp('Option Export to CSV selected');
-            exportAnnotationsToCsv(handles);
-    end
-    guidata(handles.sigInspectMainWindow, handles);
-else
-    % User canceled the dialog or closed it without making a selection
-    disp('Saving canceled');
-end
+disp('Option Save automatically selected');
+handles = saveAll(handles);
+guidata(handles.sigInspectMainWindow, handles);
 
 
 % --------------------------------------------------------------------
 function openTool_ClickedCallback(hObject, eventdata, handles)
-% hObject    handle to openTool (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-[file path] = uigetfile('*.mat','open dbsArtifactAnnotation*.mat file (saved annotation)');
-% if ~isequal(file, 0)
-%     open(file);
-% end
-filePath = [path file];
-
-if(~isempty(filePath) && any(filePath))
-    data = load(filePath);
-    
-    % annotation variable must be present
-    if(~isfield(data,'annotation'))
-        errordlg('No annotation found in file. Annotation not loaded','Annotation load error');
+    % Prompt user to select a file (either .mat or .csv)
+    [file, path] = uigetfile({'*.mat;*.csv', 'MAT or CSV Files (*.mat, *.csv)'}, 'Load Annotations File');
+    if isequal(file, 0)
+        disp('User canceled loading.');
         return;
     end
     
-    % signalIds variable must be present & match loaded signalIds
-    if(~isfield(data,'signalIds'))
-        errordlg('No signalIds variable found in the file. Annotation could not be loaded','Annotation load error');
-        return
-    else
-        data.signalIds=data.signalIds(:); % convert to col vector
-        idsOk = length(data.signalIds)==length(handles.signalIds);
-        idsOk = idsOk && iscell(data.signalIds) && all(~cellfun(@isempty,data.signalIds)) && all(strcmp(data.signalIds,handles.signalIds));
-        if(~idsOk)
-            errordlg('SignalIds in annotation file do not match loaded ones. Annotation not loaded','Annotation load error');
-            return
-        end                               
-    end
+    filepath = fullfile(path, file);
+    [~, ~, ext] = fileparts(filepath);
     
-    % signalIds and annotation must be of the same length
-    if(length(data.signalIds)~=length(data.annotation))
-        errordlg('Annotation and signalIds in the file are of different length. Annotation not loaded','Annotation load error');
-        return;
-    end 
+    % Delegate to appropriate function based on file extension
+    switch lower(ext)
+        case '.mat'
+            disp('loading annotations from mat file')
+            loadAnnotationsFromMat(filepath, handles);
+        case '.csv'
+            %loadAnnotationsFromCsv(filepath, handles);
+            disp('loading annotations from csv file')
+        otherwise
+            errordlg('Unsupported file type. Please select a .mat or .csv file.', 'Load Error');
+    end
 
-    % metadata check: interfaceClass, artifactTypes - may be joined with current on request if these are not present or are empty
-    if( (~isfield(data,'interfaceClass') || isempty(data.interfaceClass))||...
-        (~isfield(data,'artifactTypes')  || isempty(data.artifactTypes)))
-        
-    % no metadata present in file
-        res = questdlg('Annotation does not contain metadata (artifactTypes or interfaceClass). Do you want to convert the loaded annotation to conform to current data structure?','Loading annotation');
-        switch(res)
-            case 'Yes'
-                % join with current, extend annotation
-                convAnnot = convertAnnot(data.annotation,handles.settings.ARTIFACT_TYPES);
-                
-                % check if conversion successful
-                if(isempty(convAnnot))
-                    errordlg('Annotation could not be converted','Annotation load error');
-                    return;
-                end
-                setAnnot(handles,convAnnot)
-                msgbox('Conversion ok. Annotation loaded.','Annotation loaded','modal')
-                return
-            otherwise
-                % cancel loading
-                msgbox('Annotation not loaded','Annotation load error','warn','modal')
-                return
-        end
-    end 
-    
-    % check metadata if present
-    % check interface type
-    if((handles.settings.ANNOT_FILE_CHECK_INTERFACE_CLASS && ~strcmp(data.interfaceClass,class(handles.interface))))
-        res = questdlg(sprintf('Interface type in annotation file (%s) does not match current data (%s). Do you want to ignore the mismatch?',data.interfaceClass,class(handles.interface)),'Loading annotation');
-        switch(res)
-            case 'Yes'
-            otherwise
-                msgbox('User abort. Annotation NOT loaded','User abort','warn','modal')
-                return
-        end
+function loadAnnotationsFromMat(filepath, handles)
+    data = load(filepath);
+
+    % Validate the structure of the .mat file (annotation and signalIds)
+    if ~isfield(data, 'annotation') || ~isfield(data, 'signalIds')
+        errordlg('No annotation or signalIds found in the file.', 'Load Error');
+        return;
     end
-    % check artifact types
-    if(handles.settings.ANNOT_FILE_CHECK_ARTIFACT_TYPES  && ~isequal(data.artifactTypes,handles.settings.ARTIFACT_TYPES))        
-        res = questdlg(sprintf('Annotation file artifact types differ from currently loaded ones ({%s} vs {%s}). Do you want to attempt conversion to current data? This will join all artifact types into one',sprintf('%s,',data.artifactTypes{:}),sprintf('%s,',handles.settings.ARTIFACT_TYPES{:})),'Loading annotation');
-%         res = questdlg('Annotation file artifact types differ from currently loaded ones. Do you want to attempt conversion to current data? This will join all artifact types into one','Loading annotation');
-        switch(res)
-            case 'Yes'
-                % join with current, extend annotation
-                convAnnot = convertAnnot(data.annotation,handles.settings.ARTIFACT_TYPES);
-                
-                % check if conversion successful
-                if(isempty(convAnnot))
-                    errordlg('Annotation could not be converted','Annotation load error');
-                    return;
-                end
-                setAnnot(handles,convAnnot)
-                msgbox('Conversion ok. Annotation loaded.','Annotation loaded','modal')
-                return
-            otherwise
-                % cancel loading
-                msgbox('User abort. Annotation not loaded','User abort','warn','modal')
-                return
-        end
-    end  
+    
+    % Ensure that signalIds match the currently loaded ones
+    data.signalIds = data.signalIds(:);  % Convert to column vector
+    idsOk = length(data.signalIds) == length(handles.signalIds) && ...
+            iscell(data.signalIds) && all(~cellfun(@isempty, data.signalIds)) && ...
+            all(strcmp(data.signalIds, handles.signalIds));
+    
+    if ~idsOk
+        errordlg('SignalIds in the .mat file do not match loaded ones.', 'Load Error');
+        return;
+    end
+    
+    % Load annotations into the app
     setAnnot(handles, data.annotation);
-    msgbox('Annotation loaded','Annotation loaded','modal')
+    msgbox('Annotations loaded from .mat file successfully.', 'Success');
+
+
+function loadAnnotationsFromCsv(filepath, handles)
+    % Read the CSV file into a table
+    annotationsTable = readtable(filepath);
     
-end
+    % Validate the required columns
+    if ~all(ismember({'SignalId', 'TimeInSeconds'}, annotationsTable.Properties.VariableNames))
+        errordlg('CSV file is missing required columns (SignalId, TimeInSeconds).', 'Load Error');
+        return;
+    end
+    
+    % Extract unique signal IDs and initialize annotations
+    signalIds = unique(annotationsTable.SignalId);
+    annotations = cell(length(signalIds), 1);
+    
+    % Iterate over each signal ID
+    for idx = 1:length(signalIds)
+        currentSignalId = signalIds(idx);
+        signalRows = annotationsTable.SignalId == currentSignalId;
+        signalData = annotationsTable(signalRows, :);
+        
+        % Extract channel annotations
+        channelData = signalData{:, 3:end};
+        
+        % Convert numerical annotations to binary format using `annotNum2Bin`
+        maxN = size(channelData, 2);  % Maximum number of channels
+        annotations{idx} = annotNum2Bin(channelData, maxN)';
+    end
+    
+    % Check that signal IDs match the currently loaded ones
+    idsOk = isequal(signalIds(:), handles.signalIds(:));
+    if ~idsOk
+        errordlg('Signal IDs in the CSV file do not match loaded signals.', 'Load Error');
+        return;
+    end
+    
+    % Store the annotations in the handles structure
+    setAnnot(handles, annotations);
+    msgbox('Annotations loaded from CSV successfully.', 'Success');
+
+function ba = annotNum2Bin(numAnnot, maxN)
+    % Convert numerical annotations to binary vector
+    if nargin < 2
+        maxN = 5; % Default number of artifact types
+    end
+    
+    na = numAnnot(:);  % Flatten the input annotations
+    ba = false(length(na), maxN);  % Initialize binary annotation matrix
+    
+    for ii = 1:length(na)
+        x = na(ii);
+        for ni = maxN:-1:0        
+            if x >= 2^ni
+                x = x - 2^ni;
+                ba(ii, ni + 1) = true;
+            end
+        end
+    end
+
+
+
+% 
+% function openTool_ClickedCallback(hObject, eventdata, handles)
+% % TODO
+% % hObject    handle to openTool (see GCBO)
+% % eventdata  reserved - to be defined in a future version of MATLAB
+% % handles    structure with handles and user data (see GUIDATA)
+% [file path] = uigetfile('*.mat','open dbsArtifactAnnotation*.mat file (saved annotation)');
+% % if ~isequal(file, 0)
+% %     open(file);
+% % end
+% filePath = [path file];
+% 
+% if(~isempty(filePath) && any(filePath))
+%     data = load(filePath);
+% 
+%     % annotation variable must be present
+%     if(~isfield(data,'annotation'))
+%         errordlg('No annotation found in file. Annotation not loaded','Annotation load error');
+%         return;
+%     end
+% 
+%     % signalIds variable must be present & match loaded signalIds
+%     if(~isfield(data,'signalIds'))
+%         errordlg('No signalIds variable found in the file. Annotation could not be loaded','Annotation load error');
+%         return
+%     else
+%         data.signalIds=data.signalIds(:); % convert to col vector
+%         idsOk = length(data.signalIds)==length(handles.signalIds);
+%         idsOk = idsOk && iscell(data.signalIds) && all(~cellfun(@isempty,data.signalIds)) && all(strcmp(data.signalIds,handles.signalIds));
+%         if(~idsOk)
+%             errordlg('SignalIds in annotation file do not match loaded ones. Annotation not loaded','Annotation load error');
+%             return
+%         end                               
+%     end
+% 
+%     % signalIds and annotation must be of the same length
+%     if(length(data.signalIds)~=length(data.annotation))
+%         errordlg('Annotation and signalIds in the file are of different length. Annotation not loaded','Annotation load error');
+%         return;
+%     end 
+% 
+%     % metadata check: interfaceClass, artifactTypes - may be joined with current on request if these are not present or are empty
+%     if( (~isfield(data,'interfaceClass') || isempty(data.interfaceClass))||...
+%         (~isfield(data,'artifactTypes')  || isempty(data.artifactTypes)))
+% 
+%     % no metadata present in file
+%         res = questdlg('Annotation does not contain metadata (artifactTypes or interfaceClass). Do you want to convert the loaded annotation to conform to current data structure?','Loading annotation');
+%         switch(res)
+%             case 'Yes'
+%                 % join with current, extend annotation
+%                 convAnnot = convertAnnot(data.annotation,handles.settings.ARTIFACT_TYPES);
+% 
+%                 % check if conversion successful
+%                 if(isempty(convAnnot))
+%                     errordlg('Annotation could not be converted','Annotation load error');
+%                     return;
+%                 end
+%                 setAnnot(handles,convAnnot)
+%                 msgbox('Conversion ok. Annotation loaded.','Annotation loaded','modal')
+%                 return
+%             otherwise
+%                 % cancel loading
+%                 msgbox('Annotation not loaded','Annotation load error','warn','modal')
+%                 return
+%         end
+%     end 
+% 
+%     % check metadata if present
+%     % check interface type
+%     if((handles.settings.ANNOT_FILE_CHECK_INTERFACE_CLASS && ~strcmp(data.interfaceClass,class(handles.interface))))
+%         res = questdlg(sprintf('Interface type in annotation file (%s) does not match current data (%s). Do you want to ignore the mismatch?',data.interfaceClass,class(handles.interface)),'Loading annotation');
+%         switch(res)
+%             case 'Yes'
+%             otherwise
+%                 msgbox('User abort. Annotation NOT loaded','User abort','warn','modal')
+%                 return
+%         end
+%     end
+%     % check artifact types
+%     if(handles.settings.ANNOT_FILE_CHECK_ARTIFACT_TYPES  && ~isequal(data.artifactTypes,handles.settings.ARTIFACT_TYPES))        
+%         res = questdlg(sprintf('Annotation file artifact types differ from currently loaded ones ({%s} vs {%s}). Do you want to attempt conversion to current data? This will join all artifact types into one',sprintf('%s,',data.artifactTypes{:}),sprintf('%s,',handles.settings.ARTIFACT_TYPES{:})),'Loading annotation');
+% %         res = questdlg('Annotation file artifact types differ from currently loaded ones. Do you want to attempt conversion to current data? This will join all artifact types into one','Loading annotation');
+%         switch(res)
+%             case 'Yes'
+%                 % join with current, extend annotation
+%                 convAnnot = convertAnnot(data.annotation,handles.settings.ARTIFACT_TYPES);
+% 
+%                 % check if conversion successful
+%                 if(isempty(convAnnot))
+%                     errordlg('Annotation could not be converted','Annotation load error');
+%                     return;
+%                 end
+%                 setAnnot(handles,convAnnot)
+%                 msgbox('Conversion ok. Annotation loaded.','Annotation loaded','modal')
+%                 return
+%             otherwise
+%                 % cancel loading
+%                 msgbox('User abort. Annotation not loaded','User abort','warn','modal')
+%                 return
+%         end
+%     end  
+%     setAnnot(handles, data.annotation);
+%     msgbox('Annotation loaded','Annotation loaded','modal')
+% 
+% end
 
 function setAnnot(handles,newAnnot)
     % sets new annotation to handles, does no error checking
@@ -2881,3 +2960,59 @@ switch(eventdata.Key)
     case {'pagedown','pageup'}
         focusToFig(hObject)
 end
+
+
+% --------------------------------------------------------------------
+function saveAsTool_ClickedCallback(hObject, eventdata, handles)
+% hObject    handle to saveAsTool (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+% Implement the saving logic for "Save as"
+disp('Option Save as selected');
+
+% Generate default filename using current date and time
+filedatetime = datestr(now, 'yyyy-mm-dd-HHMMss');
+defaultFilename = strrep(handles.settings.ANNOT_DEFAULT_FILENAME, '##', filedatetime);
+
+% Open a "Save As" dialog box with the default filename
+[file, path] = uiputfile({
+    '*.mat', 'MAT-files (*.mat)';
+    '*.*', 'All Files (*.*)'
+}, 'Save Data As', defaultFilename);
+
+if isequal(file, 0) || isequal(path, 0)
+    disp('User canceled save.');
+else
+    % Construct full file path
+    filepath = fullfile(path, file);
+
+    % Save the data
+    annotation = handles.annotation;
+    signalIds = handles.signalIds;
+    interfaceClass = class(handles.interface);
+    artifactTypes = handles.settings.ARTIFACT_TYPES;
+
+    % Save the specified data to the chosen filepath
+    save(filepath, 'annotation', 'signalIds', 'interfaceClass', 'artifactTypes');
+
+    % Display a message indicating success
+    msg = ['Data saved to: ', filepath];
+    msgbox(msg, 'modal');
+    disp(msg);
+
+    % Indicate no unsaved changes
+    handles.anyChanges = false;
+end
+guidata(handles.sigInspectMainWindow, handles);
+
+
+% --------------------------------------------------------------------
+function exportTool_ClickedCallback(hObject, eventdata, handles)
+% hObject    handle to exportTool (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+% Implement the saving logic for Option 3
+disp('Option Export to CSV selected');
+exportAnnotationsToCsv(handles);
+guidata(handles.sigInspectMainWindow, handles);
+

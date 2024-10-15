@@ -36,7 +36,7 @@ classdef sigInspectDataBasic < sigInspectDataInterface
             if(ischar(pathOrMatrix))
                  % path to a mat file
                  obj.loadMat(pathOrMatrix);                 
-            elseif(iscell(pathOrMatrix))                
+            elseif(iscell(pathOrMatrix))
                 if(~obj.checkDataCell(pathOrMatrix))
                     error('first input must be a cell array of non-empty numeric vectors/matrices')                        
                 end
@@ -61,7 +61,7 @@ classdef sigInspectDataBasic < sigInspectDataInterface
                 if(iscell(signalIds))
                     obj.signalIds=signalIds; 
                 else
-                    warning('signal ids must be a cell array of strings - ingnoring, using default numbering')
+                    warning('signal ids must be a cell array of strings - ignoring, using default numbering')
                     obj.generateIds(); % use default ids
                 end
             else

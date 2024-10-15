@@ -12,6 +12,7 @@
 *.bbl
 *.xlsx
 *.csv
+*.png
 /DAO
 /tests
 /data
