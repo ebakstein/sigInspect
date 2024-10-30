@@ -6,6 +6,8 @@ classdef sigInspectDataCsv < sigInspectDataInterface
     % define class, inherit sigInspectDataInterface abstract class
     properties
         dirPath='';
+        signalIds={};
+        % signals={};
     end
   
     methods
@@ -20,9 +22,6 @@ classdef sigInspectDataCsv < sigInspectDataInterface
             if ~isempty(varargin) && isnumeric(varargin{1})
                 samplingFreq = varargin{1};
             end
-
-            % if ~isempty(obj.settings.SAMPLING_FREQ)
-            % TODO check the samplingFreq 
 
             % If sampling frequency is still empty, prompt the user
             if isempty(samplingFreq)
@@ -55,6 +54,7 @@ classdef sigInspectDataCsv < sigInspectDataInterface
                 error('Path %s does not exist', obj.dirPath);
             end
         end
+        
         
         % TODO signalId same as in sigInspectDataBasic
         % read signals based on signalId (=filename)
