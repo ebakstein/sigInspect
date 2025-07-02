@@ -12,6 +12,7 @@ function annot = sigInspectClassify(signal,fs,method, varargin)
 %           'tree'- pre-trained decision tree, based on multiple features,
 %                   trained on a multi-centric database from [2]
 %           'cov' - not yet implemented
+%           'svm' - 3 svm classifiers - POW, BASE, FREQ artifacts
 %   params - optional parameters for some of the classification methods:
 %          for 'psd': detection trheshold (default:0.01)
 %          for 'cov' three parameters:
@@ -21,6 +22,7 @@ function annot = sigInspectClassify(signal,fs,method, varargin)
 %                      to be marked as artifact to mark the whole sec. as
 %                      artifact (deafault: winLength)
 %           (default values based on [2])
+%           for 'svm': struct containing artifact names and optionally threshold values 
 % OUT:
 %   annot - logical vector of annotation for each second of input signal.
 %           true = artifact, false = clean signal
@@ -121,7 +123,51 @@ switch(method)
             else
                 error('sixth parameter for COV method is aggregation threshold (numeric, greater than 0, lower or equal to 1, multiple of winLength)')
             end
-        end               
+        end  
+    case 'svm'
+        try
+            classif = load('sigInspectSVMClassifiers.mat'); % load pre-trained classifiers
+            classif = classif.classifiers;
+        catch err        
+            error('could not load precalculated classifiers: search sigInspect root for the file sigInspectSVMClassifiers.mat (necessary for the svm classifiers)')
+        end
+        if nargin < 4
+            error('you must provide a parameter struct specifying artifact types.');
+        end
+        param = varargin{1};
+
+        % Extract artifact types from user's input struct (fields of param)
+        artifactTypes = intersect(fieldnames(param), fieldnames(classif));  % make sure it's valid
+    
+        if isempty(artifactTypes)
+            artifactTypes = fieldnames(classif);  % default to all if none provided
+        end
+    
+        % Fill in default threshold where not provided
+        thresholds = struct();
+        for i = 1:numel(artifactTypes)
+            art = artifactTypes{i};
+            if isfield(param.(art), 'threshold')
+                thresholds.(art) = param.(art).threshold;
+            else
+                thresholds.(art) = 0.5;
+            end
+        end
+        
+    
+        % Collect unique relevant feature names
+        featNames = {};
+        for i = 1:numel(artifactTypes)
+            featList = classif.(artifactTypes{i}).featNames;
+            featNames = [featNames, featList];  % concatenate all
+        end
+        featNames = unique(featNames);  % remove duplicates
+        featComp = 1:length(featNames);
+
+        % Init annotation matrix
+        Nartif = length(artifactTypes);
+        method = 'svm';
+
     otherwise
         error('Unknown method: %s',method)
 end
@@ -154,6 +200,31 @@ switch(method)
         annot = false(Nch,Ns);
         for chi=1:Nch
             annot(chi,:) = sigInspectClassifyCov(signal(chi,:),fs,'cov', covThr, winLength, aggregPerc,false);
+        end
+    case 'svm'
+        annot = false(Nch, Ns, Nartif);
+        scores = zeros(Nch*Ns, Nartif);  % soft outputs
+        for i = 1:Nartif
+            art = artifactTypes{i};
+            featureSet = classif.(art).featNames;  % features for this artifact
+            [~, featureInds] = ismember(featureSet, featNames);  % indices in featVals, in correct order
+            if any(featureInds == 0)
+                error('Some features required by the SVM are missing in the computed features!');
+            end
+            X = featVals(:, featureInds);
+
+            % Get classifier
+            model = classif.(art).svmProbModel;
+
+            % Check for NaNs and replace with zeros
+            X(isnan(X)) = 0;
+
+            % Predict using trained SVM – get scores (posterior probabilities)
+            [~, score] = predict(model, X);  % score is N x 2, we take the 2nd column (class == 1)
+            scores(:, i) = score(:, 2);  % probability of being artifact
+
+            % Apply threshold to convert to binary
+            annot(:,:,i) = reshape(scores(:, i) > thresholds.(art), Nch, Ns);
         end
 end
 
