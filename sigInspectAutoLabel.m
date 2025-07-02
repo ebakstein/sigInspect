@@ -128,7 +128,7 @@ if strcmpi(method, 'svm')
     artifactTypes = fieldnames(param);  % Update artifact types from param keys
 end
 
-fprintf(' ... ihitialization done\n');
+fprintf(' ... initialization done\n');
 
 % go through all signals
 tic
@@ -145,13 +145,13 @@ for ii=1:N
     allAn = false(Nr,Nsec,Nartif); 
     if strcmpi(method, 'svm')
         % Use param and artifactTypes as set above
-        curAn = sigInspectClassify(curSignals, samplingFreq, method, param);
+        curAn = sigInspectClassify(curSignals, sigId, samplingFreq, method, param);
         for a = 1:length(artifactTypes)
             allAn(:,:,a) = curAn(:,:,a);
         end
         artSec = sum(any(any(curAn,3),2),1);
     else
-        curAn = sigInspectClassify(curSignals, samplingFreq, method, varargin{:});
+        curAn = sigInspectClassify(curSignals, sigId, samplingFreq, method, varargin{:});
         allAn(:,:,artifactAutoWhich) = curAn;
         artSec = sum(any(curAn,3),2);
     end

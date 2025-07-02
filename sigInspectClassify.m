@@ -1,4 +1,4 @@
-function annot = sigInspectClassify(signal,fs,method, varargin)
+function annot = sigInspectClassify(signal, signalId, fs, method, varargin)
 % function annot = sigInspectClassify(signal,varargin)
 % classify artifacts in each second of provided micro-EEG signal
 % 
@@ -173,15 +173,8 @@ switch(method)
 end
 
 % ---- COMPUTE FEATURES ----
-Nfeat = length(featNames); 
-if(Nfeat>0) % all methods exc. COV - does not use features
-    featVals = nan(Nch*Ns,Nfeat); % channel, second, artif. type
-    for si=1:Ns % iterate over seconds
-        inds = (si-1)*fs+1 : min(si*fs, N); % pick appropriate channels
-        fv = sigInspectComputeFeatures(signal(:,inds),featNames(featComp),fs); % feature values for given second of all channels
-        featVals((si-1)*Nch+(1:Nch),featComp) = fv; % store as Nch rows of the feature table
-    end
-end
+cacheFile = 'featuresCache.mat'; % or full path if needed
+featVals = getOrComputeFeatures(signal, signalId, method, featNames, fs, cacheFile);
 
 % ---- CLASSIFY ----
 switch(method)
@@ -226,5 +219,64 @@ switch(method)
             % Apply threshold to convert to binary
             annot(:,:,i) = reshape(scores(:, i) > thresholds.(art), Nch, Ns);
         end
+end
+
+function featVals = getOrComputeFeatures(signal, signalId, method, featNames, fs, cacheFile)
+    % signal: matrix (channels x samples)
+    % signalId: string, e.g. '#1'
+    % method: string, e.g. 'svm'
+    % featNames: cell array of feature names
+    % fs: sampling frequency
+    % cacheFile: string, path to .mat file
+
+    % Make valid field names
+    signalIdField = matlab.lang.makeValidName(signalId);
+    methodField = matlab.lang.makeValidName(method);
+
+    % Try to load cache
+    featuresCache = struct();
+    if exist(cacheFile, 'file')
+        S = load(cacheFile);
+        % If the file contains a featuresCache struct, unwrap it to top-level fields
+        if isfield(S, 'featuresCache')
+            % Unwrap: assign each field of featuresCache to the workspace struct
+            fcFields = fieldnames(S.featuresCache);
+            for k = 1:numel(fcFields)
+                featuresCache.(fcFields{k}) = S.featuresCache.(fcFields{k});
+            end
+        else
+            % Already top-level signalId fields
+            featuresCache = S;
+        end
+    end
+
+    % Check if features already cached
+    if isfield(featuresCache, signalIdField) && isfield(featuresCache.(signalIdField), methodField)
+        featVals = featuresCache.(signalIdField).(methodField);
+        return;
+    end
+
+    % Compute features
+    Nch = size(signal,1);
+    N = size(signal,2);
+    Ns = ceil(N/fs);
+    Nfeat = length(featNames);
+    featVals = nan(Nch*Ns, Nfeat);
+    for si = 1:Ns
+        inds = (si-1)*fs+1 : min(si*fs, N);
+        fv = sigInspectComputeFeatures(signal(:,inds), featNames, fs);
+        nChHere = size(fv,1);
+        featVals((si-1)*Nch + (1:nChHere), :) = fv;
+    end
+
+    % Save to cache (append or create) as top-level signalId fields
+    featuresCache.(signalIdField).(methodField) = featVals;
+    if exist(cacheFile, 'file')
+        save(cacheFile, '-struct', 'featuresCache', '-append');
+    else
+        save(cacheFile, '-struct', 'featuresCache');
+    end
+end
+
 end
 
