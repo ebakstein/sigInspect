@@ -3,7 +3,7 @@
 % E. Bakstein 20161209
 
 % subdirectories to be added
-dirs = {'interfaces'};
+dirs = {'interfaces','features'};
 
 % reference - path to sigInspectInit.m file
 [pth,~,~] = fileparts(which(mfilename));

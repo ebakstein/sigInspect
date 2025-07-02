@@ -70,6 +70,10 @@ end
 if(isprop(interface,'settings') && isfield(interface.settings,'ARTIFACT_TYPES'))
     artifactTypes =interface.settings.ARTIFACT_TYPES;
     fprintf('number_of_artifact_types = %d (from interface)\n',length(artifactTypes));
+elseif strcmpi(method, 'svm')
+    % Compare with the argument which artifact Types user had selected...
+    artifactTypes = {'POW', 'BASE', 'FREQ'};
+    fprintf('number_of_artifact_types = %d (DEFAULT: POW, BASE, FREQ)\n', length(artifactTypes));
 else
     artifactTypes= {'ARTIF','UNSURE'};
     fprintf('number_of_artifact_types = %d (DEFAULT)\n',length(artifactTypes));
@@ -80,6 +84,8 @@ Nartif = length(artifactTypes);
 if(isprop(interface,'settings') && isfield(interface.settings,'ARTIFACT_AUTOLABEL_WHICH'))
     artifactAutoWhich =interface.settings.ARTIFACT_AUTOLABEL_WHICH;
     fprintf('auto artifact will be stored at position %d (%s)(from interface)\n',artifactAutoWhich,artifactTypes{artifactAutoWhich});
+elseif(Nartif > 1)
+    fprintf('saving to multiple artifact types')
 else
     artifactAutoWhich = 1;
     fprintf('auto artifact will be stored at position %d (%s)(DEFAULT)\n',artifactAutoWhich,artifactTypes{artifactAutoWhich});
@@ -88,6 +94,39 @@ end
 
 % init empty annotation array
 annotation=cell(length(signalIds),1);
+
+% SVM threshold GUI logic
+if strcmpi(method, 'svm')
+    showThresholdGUI = false;
+    if isempty(varargin) || isempty(varargin{1}) || ~isstruct(varargin{1})
+        showThresholdGUI = true;
+        initialVals = [0.5 0.5 0.5];
+    else
+        param = varargin{1};
+        neededFields = {'POW','BASE','FREQ'};
+        initialVals = zeros(1,3);
+        for k = 1:3
+            if ~isfield(param, neededFields{k}) || ~isfield(param.(neededFields{k}),'threshold')
+                showThresholdGUI = true;
+                initialVals(k) = 0.5;
+            else
+                initialVals(k) = param.(neededFields{k}).threshold;
+            end
+        end
+    end
+    if showThresholdGUI
+        thresholds = svmThresholdGUI(initialVals);
+        if isempty(thresholds)
+            error('SVM threshold selection cancelled by user.');
+        end
+        param = struct( ...
+            'POW', struct('threshold', thresholds(1)), ...
+            'BASE', struct('threshold', thresholds(2)), ...
+            'FREQ', struct('threshold', thresholds(3)) ...
+        );
+    end
+    artifactTypes = fieldnames(param);  % Update artifact types from param keys
+end
 
 fprintf(' ... ihitialization done\n');
 
@@ -103,26 +142,23 @@ for ii=1:N
         
     % init empty annot
     % annotation matrix - rows=channels, columns=seconds, slices=artifact types
-%     allAn = false(Nr,Nsec,Nartif); 
-%     
-%     artSec=[];
-%     % process all channels
-%     for ci=1:Nr
-%         
-%         curAn = sigInspectClassify(curSignals(ci,:),samplingFreq, method);
-%         
-%         allAn(ci,:,1)=curAn;
-%         artSec(ci) = sum(curAn>0);
-%     end
-
-    % all channels at once
-    
     allAn = false(Nr,Nsec,Nartif); 
-    curAn = sigInspectClassify(curSignals,samplingFreq, method,varargin{:});        
-    allAn(:,:,artifactAutoWhich)=curAn; % channel, second, artif. type
+    if strcmpi(method, 'svm')
+        % Use param and artifactTypes as set above
+        curAn = sigInspectClassify(curSignals, samplingFreq, method, param);
+        for a = 1:length(artifactTypes)
+            allAn(:,:,a) = curAn(:,:,a);
+        end
+        artSec = sum(any(any(curAn,3),2),1);
+    else
+        curAn = sigInspectClassify(curSignals, samplingFreq, method, varargin{:});
+        allAn(:,:,artifactAutoWhich) = curAn;
+        artSec = sum(any(curAn,3),2);
+    end
+    %curAn = sigInspectClassify(curSignals,samplingFreq, method,varargin{:});        
+    %allAn(:,:,artifactAutoWhich)=curAn; % channel, second, artif. type
     
     % annot summary
-    artSec = sum(any(curAn,3),2);
     fprintf(' > %s artifact seconds in channels \n',sprintf('%d,',artSec))
     
     % store 
