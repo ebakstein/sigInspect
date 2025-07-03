@@ -101,32 +101,43 @@ if strcmpi(method, 'svm')
     if isempty(varargin) || isempty(varargin{1}) || ~isstruct(varargin{1})
         showThresholdGUI = true;
         initialVals = [0.5 0.5 0.5];
+        param = struct();
     else
         param = varargin{1};
-        neededFields = {'POW','BASE','FREQ'};
-        initialVals = zeros(1,3);
-        for k = 1:3
-            if ~isfield(param, neededFields{k}) || ~isfield(param.(neededFields{k}),'threshold')
-                showThresholdGUI = true;
-                initialVals(k) = 0.5;
+        % Only check the artifact types the user wants
+        artifactTypes = intersect(fieldnames(param), {'POW','BASE','FREQ'});
+        initialVals = [0.5 0.5 0.5];
+        for k = 1:numel(artifactTypes)
+            art = artifactTypes{k};
+            idx = find(strcmp({'POW','BASE','FREQ'}, art));
+            if isfield(param.(art), 'threshold')
+                initialVals(idx) = param.(art).threshold;
             else
-                initialVals(k) = param.(neededFields{k}).threshold;
+                showThresholdGUI = true;
             end
+        end
+        % If user didn't provide all three, you can decide if you want to show GUI or not
+        if numel(artifactTypes) < 3
+            showThresholdGUI = true;
         end
     end
     if showThresholdGUI
-        thresholds = svmThresholdGUI(initialVals);
-        if isempty(thresholds)
+        result = svmThresholdGUI(initialVals);
+        if isempty(result)
             error('SVM threshold selection cancelled by user.');
         end
-        param = struct( ...
-            'POW', struct('threshold', thresholds(1)), ...
-            'BASE', struct('threshold', thresholds(2)), ...
-            'FREQ', struct('threshold', thresholds(3)) ...
-        );
+        artifactNames = {'POW','BASE','FREQ'};
+        param = struct();
+        for k = 1:3
+            if result.include(k)
+                param.(artifactNames{k}) = struct('threshold', result.thresholds(k));
+            end
+        end
     end
     artifactTypes = fieldnames(param);  % Update artifact types from param keys
 end
+
+Nartif = length(artifactTypes); % <-- Set Nartif here, after artifactTypes is finalized
 
 fprintf(' ... initialization done\n');
 
@@ -176,7 +187,16 @@ if(nargout<1)
         pathToSave = sprintf('sigInspectAutoAnnotation%s.mat',datestr(now,'yyyy-mm-dd-HHMMSS'));
     end
     interfaceClass = class(interface);
-    save(pathToSave,'annotation','signalIds','artifactTypes','interfaceClass')
+    if strcmpi(method, 'svm')
+        thresholds = struct();
+        for k = 1:length(artifactTypes)
+            art = artifactTypes{k};
+            thresholds.(art) = param.(art).threshold;
+        end
+        save(pathToSave,'annotation','signalIds','artifactTypes','interfaceClass','thresholds')
+    else
+        save(pathToSave,'annotation','signalIds','artifactTypes','interfaceClass')
+    end
     fprintf('ANNOTATION SAVED TO: %s\n',pathToSave)
 end
     
