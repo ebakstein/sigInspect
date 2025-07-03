@@ -195,6 +195,8 @@ switch(method)
             annot(chi,:) = sigInspectClassifyCov(signal(chi,:),fs,'cov', covThr, winLength, aggregPerc,false);
         end
     case 'svm'
+        artifactTypes = fieldnames(param);  % Update artifact types from param keys
+        Nartif = length(artifactTypes);
         annot = false(Nch, Ns, Nartif);
         scores = zeros(Nch*Ns, Nartif);  % soft outputs
         for i = 1:Nartif
