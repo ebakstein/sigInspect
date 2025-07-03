@@ -1,6 +1,6 @@
 *.asv
 *.log
-*.mat
+sigInspectAutoAnnotation*
 *.aux
 *.blg
 *.out
@@ -17,3 +17,4 @@
 /tests
 /data
 /manual
+/outputs
