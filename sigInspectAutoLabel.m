@@ -139,6 +139,10 @@ end
 
 Nartif = length(artifactTypes); % <-- Set Nartif here, after artifactTypes is finalized
 
+% After initializing interface and signalIds, compute loaderHash
+loaderHash = getDataLoaderHash(interface);
+disp(loaderHash);
+
 fprintf(' ... initialization done\n');
 
 % go through all signals
@@ -156,13 +160,13 @@ for ii=1:N
     allAn = false(Nr,Nsec,Nartif); 
     if strcmpi(method, 'svm')
         % Use param and artifactTypes as set above
-        curAn = sigInspectClassify(curSignals, sigId, samplingFreq, method, param);
+        curAn = sigInspectClassify(curSignals, sigId, samplingFreq, method, param, loaderHash);
         for a = 1:length(artifactTypes)
             allAn(:,:,a) = curAn(:,:,a);
         end
         artSec = sum(any(any(curAn,3),2),1);
     else
-        curAn = sigInspectClassify(curSignals, sigId, samplingFreq, method, varargin{:});
+        curAn = sigInspectClassify(curSignals, sigId, samplingFreq, method, varargin{:}, loaderHash);
         allAn(:,:,artifactAutoWhich) = curAn;
         artSec = sum(any(curAn,3),2);
     end
@@ -249,4 +253,99 @@ function interface = initInterface(vararg)
             interface=sigInspectDataBasic(vararg);
         end
     end
+
+function loaderHash = getDataLoaderHash(interface)
+    % Create a unique string from loader settings, file list, and file modification times
+    % Works with different data loader types: sigInspectDataCsv, sigInspectDataBasic, sigInspectDataMatDir
     
+    % Get settings if available
+    if isprop(interface, 'settings')
+        s = jsonencode(interface.settings);
+        fprintf('\nSettings: %s\n', s);
+    else
+        s = '';
+    end
+    
+    % Get file list and their modification times
+    fileInfo = '';
+    f = '';
+    
+    % Check for different possible file list properties
+    if isprop(interface, 'fileList')
+        fileList = interface.fileList;
+        f = jsonencode(interface.fileList);
+        fprintf('File list: %s\n', f);
+    elseif isprop(interface, 'dataPath')
+        % For sigInspectDataCsv, dataPath might contain the directory
+        fileList = {interface.dataPath};
+        f = jsonencode(interface.dataPath);
+        fprintf('Data path: %s\n', f);
+    elseif isprop(interface, 'pathOrMatrix')
+        % For sigInspectDataBasic, might have pathOrMatrix
+        if ischar(interface.pathOrMatrix)
+            fileList = {interface.pathOrMatrix};
+            f = jsonencode(interface.pathOrMatrix);
+            fprintf('Path or matrix: %s\n', f);
+        else
+            fileList = {};
+            f = '';
+        end
+    else
+        fileList = {};
+        f = '';
+    end
+    
+    % Get file modification times if we have file paths
+    if ~isempty(fileList)
+        if iscell(fileList) || ischar(fileList)
+            if ischar(fileList)
+                fileList = {fileList};
+            end
+            for i = 1:length(fileList)
+                if exist(fileList{i}, 'file')
+                    fileDetails = dir(fileList{i});
+                    if ~isempty(fileDetails)
+                        % Include filename and modification time
+                        fileInfo = [fileInfo, fileList{i}, ':', num2str(fileDetails(1).datenum), ';'];
+                        fprintf('File %s modified at %s\n', fileList{i}, datestr(fileDetails(1).datenum));
+                    end
+                elseif exist(fileList{i}, 'dir')
+                    % For directories, get modification time of the directory
+                    fileDetails = dir(fileList{i});
+                    if ~isempty(fileDetails)
+                        fileInfo = [fileInfo, fileList{i}, ':', num2str(fileDetails(1).datenum), ';'];
+                        fprintf('Directory %s modified at %s\n', fileList{i}, datestr(fileDetails(1).datenum));
+                    end
+                end
+            end
+        end
+    end
+    
+    % Add data path explicitly if available
+    if isprop(interface, 'dataPath')
+        dataPath = interface.dataPath;
+    else
+        % Try to extract path from first file if available
+        if ~isempty(fileList)
+            if iscell(fileList)
+                dataPath = fileparts(fileList{1});
+            else
+                dataPath = fileparts(fileList);
+            end
+        else
+            dataPath = '';
+        end
+    end
+    
+    % Include class type in the hash to distinguish between different loader types
+    classType = class(interface);
+    
+    % Combine all components in the hash
+    loaderString = [s f fileInfo dataPath classType];
+    fprintf('Loader string: %s\n', loaderString);
+    loaderHash = string2hash(loaderString);
+
+function hash = string2hash(str)
+    % Simple hash function for a string (returns hex string)
+    str = double(str);
+    hash = dec2hex(mod(sum(str .* (1:numel(str))), 2^32), 8);

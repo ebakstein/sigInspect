@@ -174,7 +174,12 @@ end
 
 % ---- COMPUTE FEATURES ----
 cacheFile = 'featuresCache.mat'; % or full path if needed
-featVals = getOrComputeFeatures(signal, signalId, method, featNames, fs, cacheFile);
+if nargin > 5
+    loaderHash = varargin{end};
+    featVals = getOrComputeFeatures(signal, signalId, method, featNames, fs, cacheFile, loaderHash);
+else
+    featVals = getOrComputeFeatures(signal, signalId, method, featNames, fs, cacheFile);
+end
 
 % ---- CLASSIFY ----
 switch(method)
@@ -223,39 +228,70 @@ switch(method)
         end
 end
 
-function featVals = getOrComputeFeatures(signal, signalId, method, featNames, fs, cacheFile)
+function featVals = getOrComputeFeatures(signal, signalId, method, featNames, fs, cacheFile, loaderHash)
     % signal: matrix (channels x samples)
     % signalId: string, e.g. '#1'
     % method: string, e.g. 'svm'
     % featNames: cell array of feature names
     % fs: sampling frequency
     % cacheFile: string, path to .mat file
+    % loaderHash: string, hash of the loader's configuration and file list
 
     % Make valid field names
     signalIdField = matlab.lang.makeValidName(signalId);
+    loaderHashField = matlab.lang.makeValidName(loaderHash);
     methodField = matlab.lang.makeValidName(method);
 
     % Try to load cache
     featuresCache = struct();
+    cacheHit = false;
+    reason = '';
     if exist(cacheFile, 'file')
         S = load(cacheFile);
-        % If the file contains a featuresCache struct, unwrap it to top-level fields
-        if isfield(S, 'featuresCache')
-            % Unwrap: assign each field of featuresCache to the workspace struct
-            fcFields = fieldnames(S.featuresCache);
-            for k = 1:numel(fcFields)
-                featuresCache.(fcFields{k}) = S.featuresCache.(fcFields{k});
-            end
-        else
-            % Already top-level signalId fields
-            featuresCache = S;
-        end
+        featuresCache = S;
     end
 
     % Check if features already cached
-    if isfield(featuresCache, signalIdField) && isfield(featuresCache.(signalIdField), methodField)
-        featVals = featuresCache.(signalIdField).(methodField);
+    if isfield(featuresCache, signalIdField)
+        % Check if any loaderHash exists for this signalId
+        existingLoaderHashes = fieldnames(featuresCache.(signalIdField));
+        if ~isempty(existingLoaderHashes)
+            % Check if our current loaderHash matches any existing one
+            hashMatch = false;
+            for i = 1:length(existingLoaderHashes)
+                if strcmp(existingLoaderHashes{i}, loaderHashField)
+                    hashMatch = true;
+                    break;
+                end
+            end
+            
+            if hashMatch
+                if isfield(featuresCache.(signalIdField), loaderHashField)
+                    if isfield(featuresCache.(signalIdField).(loaderHashField), methodField)
+                        featVals = featuresCache.(signalIdField).(loaderHashField).(methodField);
+                        cacheHit = true;
+                        reason = 'All fields found: using cached features.';
+                    else
+                        reason = sprintf('Method \"%s\" not found for signalId \"%s\" and loaderHash \"%s\". Recomputing features.', method, signalId, loaderHash);
+                    end
+                else
+                    reason = sprintf('LoaderHash \"%s\" field missing for signalId \"%s\". Recomputing features.', loaderHash, signalId);
+                end
+            else
+                reason = sprintf('LoaderHash \"%s\" differs from existing \"%s\" for signalId \"%s\" (different data loader). Recomputing features.', loaderHash, strjoin(existingLoaderHashes, ', '), signalId);
+            end
+        else
+            reason = sprintf('No loaderHash found for signalId \"%s\". Recomputing features.', signalId);
+        end
+    else
+        reason = sprintf('SignalId \"%s\" not found in cache. Recomputing features.', signalId);
+    end
+
+    if cacheHit
+        fprintf('[CACHE] Features loaded from cache for signalId=\"%s\", loaderHash=\"%s\", method=\"%s\".\n', signalId, loaderHash, method);
         return;
+    else
+        fprintf('[CACHE] %s\n', reason);
     end
 
     % Compute features
@@ -271,8 +307,8 @@ function featVals = getOrComputeFeatures(signal, signalId, method, featNames, fs
         featVals((si-1)*Nch + (1:nChHere), :) = fv;
     end
 
-    % Save to cache (append or create) as top-level signalId fields
-    featuresCache.(signalIdField).(methodField) = featVals;
+    % Save to cache
+    featuresCache.(signalIdField).(loaderHashField).(methodField) = featVals;
     if exist(cacheFile, 'file')
         save(cacheFile, '-struct', 'featuresCache', '-append');
     else
