@@ -135,9 +135,15 @@ if strcmpi(method, 'svm')
         end
     end
     artifactTypes = fieldnames(param);  % Update artifact types from param keys
+    
+    % Automatically update interface's ARTIFACT_TYPES to match SVM parameters
+    if isprop(interface, 'settings')
+        interface.settings.ARTIFACT_TYPES = artifactTypes;
+        fprintf('Updated interface ARTIFACT_TYPES to match SVM parameters: %s\n', strjoin(artifactTypes, ', '));
+    end
 end
 
-Nartif = length(artifactTypes); % <-- Set Nartif here, after artifactTypes is finalized
+Nartif = length(artifactTypes); 
 
 fprintf(' ... initialization done\n');
 
@@ -193,17 +199,21 @@ if(nargout<1)
             art = artifactTypes{k};
             thresholds.(art) = param.(art).threshold;
         end
-        save(pathToSave,'annotation','signalIds','artifactTypes','interfaceClass','thresholds')
+        save(pathToSave,'annotation','signalIds','artifactTypes','interfaceClass','thresholds','method')
     else
-        save(pathToSave,'annotation','signalIds','artifactTypes','interfaceClass')
+        save(pathToSave,'annotation','signalIds','artifactTypes','interfaceClass','method')
     end
     fprintf('ANNOTATION SAVED TO: %s\n',pathToSave)
 end
-    
-% % bw-compatibility with old matlab
-% if(nargout<1)
-%     clear annot
-% end
+
+% Return additional parameters for SVM method
+if nargout > 1
+    if strcmpi(method, 'svm')
+        svmParams = param;
+    else
+        svmParams = [];
+    end
+end
 
 
 %% ---- support functions: handling inputs & outputs
