@@ -28,7 +28,7 @@ function varargout = sigInspect(varargin)
 
 % Edit the above text to modify the response to help sigInspect
 
-% Last Modified by GUIDE v2.5 07-Jul-2024 17:28:35
+% Last Modified by GUIDE v2.5 14-Jul-2025 15:22:07
 
 
 % Begin initialization code - DO NOT EDIT
@@ -222,7 +222,7 @@ function handles=sigInspectInit(handles, vararg)
     if(isempty(handles.interface))
         h=errordlg('No signals nor interface loaded - quitting','sigInspect initialization error');
         waitfor(h);
-        handles.quitNow = 1;
+        handles.quitNow=1;
         return
     end
 
@@ -335,6 +335,7 @@ function handles=sigInspectInit(handles, vararg)
     internalPlayer(handles,handles.internal.INTERNAL_PLAYER_INITIALIZE);
     
     handles=initArtifButtons(handles);
+    
     handles=initChannelCheckboxes(handles);
     handles=initOverview(handles);
 
@@ -1216,7 +1217,7 @@ function toggleHideUnselected(handles, hide)
     
     if(nargin<2)
         % invert state
-        hide = ~ get(handles.hideChck,'Value')==1;
+        hide = ~ get(handles.hideChck, 'Value')==1;
     end
     set(handles.hideChck,'Value',hide)    
     redraw(handles,0);
@@ -2557,12 +2558,26 @@ function loadAnnotationsFromMat(filepath, handles)
         errordlg('SignalIds in the .mat file do not match loaded ones.', 'Load Error');
         return;
     end
-    disp(data.annotation)
-    
-    % Load annotations into the app
+
+    % Set method if present
+    if isfield(data, 'method')
+        handles.method = data.method;
+    else
+        if isfield(handles, 'method')
+            handles = rmfield(handles, 'method');
+        end
+    end
+
+    if isfield(data, 'artifactTypes')
+        loadedTypes = data.artifactTypes;
+        guiTypes = handles.settings.ARTIFACT_TYPES;
+        if ~isequal(loadedTypes, guiTypes)
+            warning('Artifact types in loaded annotation do not match current GUI settings. Annotation will be converted.');
+        end
+    end
+
     setAnnot(handles, data.annotation);
     msgbox('Annotations loaded from .mat file successfully.', 'Success');
-
 
 function loadAnnotationsFromCsv(filepath, handles)
     % Read the CSV file into a table
@@ -2642,7 +2657,6 @@ function loadAnnotationsFromCsv(filepath, handles)
         errordlg('Error setting annotations: ' + string(ME.message), 'Load Error');
         return;
     end
-
     msgbox('Annotations loaded from CSV successfully.', 'Success');
 
 function ba = annotNum2Bin(numAnnot, maxN)
@@ -2672,6 +2686,7 @@ function setAnnot(handles,newAnnot)
     dispAnnotation(handles);    
     redrawSignalSelect(handles);
     redrawOverview(handles,0); % 0=not just patch
+    updateAdjustThresholdsBtnVisibility(handles);
 
 
 % convert annotation structure to current number of artifacts etc
@@ -2959,4 +2974,38 @@ function exportTool_ClickedCallback(hObject, eventdata, handles)
 disp('Option Export to CSV selected');
 handles = exportAnnotationsToCsv(handles);
 guidata(handles.sigInspectMainWindow, handles);
+
+
+% --- Executes on button press in adjustThresholdsBtn.
+function adjustThresholdsBtn_Callback(hObject, eventdata, handles)
+% hObject    handle to adjustThresholdsBtn (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+% TODO
+    msgbox('adjustThresholdsBtn_Callback called, TO BE IMPLEMENTED', 'modal');
+
+
+function adjustThresholdsBtn_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to adjustThresholdsBtn (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: pushbutton controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+    set(hObject,'Visible', 'off');
+end
+
+function updateAdjustThresholdsBtnVisibility(handles)
+    if isfield(handles, 'adjustThresholdsBtn')
+        shouldShow = isfield(handles, 'method') && strcmpi(handles.method, 'svm');
+        currentVis = get(handles.adjustThresholdsBtn, 'Visible');
+        if shouldShow && ~strcmp(currentVis, 'on')
+            set(handles.adjustThresholdsBtn, 'Visible', 'on');
+        elseif ~shouldShow && ~strcmp(currentVis, 'off')
+            set(handles.adjustThresholdsBtn, 'Visible', 'off');
+        end
+    end
+
 
