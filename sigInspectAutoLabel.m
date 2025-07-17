@@ -1,4 +1,4 @@
-function annotation = sigInspectAutoLabel(interfSignalOrPath, pathToSave, samplingFreq, method, varargin)
+function [annotation, annotationFile] = sigInspectAutoLabel(interfSignalOrPath, pathToSave, samplingFreq, method, varargin)
 % annot = sigInspectAutoLabel(iterfSignalOrPath, pathToSave, samplingFreq, method, params)  
 %   label all signals from provided cell array or interface using pre-learned 
 %   classifier, return/save annot
@@ -91,7 +91,6 @@ else
     fprintf('auto artifact will be stored at position %d (%s)(DEFAULT)\n',artifactAutoWhich,artifactTypes{artifactAutoWhich});
 end
 
-
 % init empty annotation array
 annotation=cell(length(signalIds),1);
 
@@ -139,7 +138,7 @@ if strcmpi(method, 'svm')
     % Automatically update interface's ARTIFACT_TYPES to match SVM parameters
     if isprop(interface, 'settings')
         interface.settings.ARTIFACT_TYPES = artifactTypes;
-        fprintf('Updated interface ARTIFACT_TYPES to match SVM parameters: %s\n', strjoin(artifactTypes, ', '));
+        fprintf('\nUpdated interface ARTIFACT_TYPES to match SVM parameters: %s\n', strjoin(artifactTypes, ', '));
     end
 end
 
@@ -188,6 +187,7 @@ end
 fprintf('DONE: signals labelled in %.2f seconds----\n',toc)
 
 % save annotation to *.mat file
+annotationFile = '';
 if(nargout<1)
     if(nargin<2 || isempty(pathToSave))
         pathToSave = sprintf('sigInspectAutoAnnotation%s.mat',datestr(now,'yyyy-mm-dd-HHMMSS'));
@@ -204,10 +204,28 @@ if(nargout<1)
         save(pathToSave,'annotation','signalIds','artifactTypes','interfaceClass','method')
     end
     fprintf('ANNOTATION SAVED TO: %s\n',pathToSave)
+    annotationFile = pathToSave;
+else
+    if(nargin<2 || isempty(pathToSave))
+        pathToSave = sprintf('sigInspectAutoAnnotation%s.mat',datestr(now,'yyyy-mm-dd-HHMMSS'));
+    end
+    interfaceClass = class(interface);
+    if strcmpi(method, 'svm')
+        thresholds = struct();
+        for k = 1:length(artifactTypes)
+            art = artifactTypes{k};
+            thresholds.(art) = param.(art).threshold;
+        end
+        save(pathToSave,'annotation','signalIds','artifactTypes','interfaceClass','thresholds','method')
+    else
+        save(pathToSave,'annotation','signalIds','artifactTypes','interfaceClass','method')
+    end
+    fprintf('ANNOTATION SAVED TO: %s\n',pathToSave)
+    annotationFile = pathToSave;
 end
 
 % Return additional parameters for SVM method
-if nargout > 1
+if nargout > 2
     if strcmpi(method, 'svm')
         svmParams = param;
     else

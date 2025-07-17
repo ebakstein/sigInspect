@@ -2567,7 +2567,18 @@ function loadAnnotationsFromMat(filepath, handles)
             handles = rmfield(handles, 'method');
         end
     end
+    updateAdjustThresholdsBtnVisibility(handles);
 
+    % Set thresholds if present
+    if isfield(data, 'thresholds')
+        handles.thresholds = data.thresholds;
+    else
+        if isfield(handles, 'thresholds')
+            handles = rmfield(handles, 'thresholds');
+        end
+    end
+
+    % Check if artifact types match
     if isfield(data, 'artifactTypes')
         loadedTypes = data.artifactTypes;
         guiTypes = handles.settings.ARTIFACT_TYPES;
@@ -2978,11 +2989,40 @@ guidata(handles.sigInspectMainWindow, handles);
 
 % --- Executes on button press in adjustThresholdsBtn.
 function adjustThresholdsBtn_Callback(hObject, eventdata, handles)
-% hObject    handle to adjustThresholdsBtn (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-% TODO
-    msgbox('adjustThresholdsBtn_Callback called, TO BE IMPLEMENTED', 'modal');
+% Determine current thresholds or use defaults
+artifactNames = {'POW','BASE','FREQ'};
+% Check each threshold individually; if missing, use 0.5 as default
+artifactNames = {'POW','BASE','FREQ'};
+initialVals = 0.5*ones(1,3);
+for k = 1:3
+    art = artifactNames{k};
+    if isfield(handles, 'thresholds') && isfield(handles.thresholds, art)
+        initialVals(k) = handles.thresholds.(art);
+    end
+end
+
+% Show the same threshold GUI as in sigInspectAutoLabel
+if exist('svmThresholdGUI', 'file') == 2
+    result = svmThresholdGUI(initialVals);
+    if isempty(result)
+        return; % User cancelled
+    end
+    param = struct();
+    for k = 1:3
+        if result.include(k)
+            param.(artifactNames{k}) = struct('threshold', result.thresholds(k));
+        end
+    end
+end
+
+% Re-run autolabeling with new thresholds
+intf = handles.interface;
+samplingFreq = handles.samplingFreq;
+[annotation, annotationFile] = sigInspectAutoLabel(intf, [], samplingFreq, 'svm', param);
+
+% Apply new annotation to GUI
+setAnnot(handles, annotation);
+msgbox('Annotation updated with new thresholds!', 'Success');
 
 
 function adjustThresholdsBtn_CreateFcn(hObject, eventdata, handles)
