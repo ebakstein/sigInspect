@@ -1652,6 +1652,16 @@ function dispAnnotation(handles)
     if(isempty(annot))
         error('uninitalized annotation. dispAnnot probably called before setSignal')
     end
+
+    % Check dimensions before accessing
+    [nCh, nSec, nArt] = size(annot);
+    if nArt < handles.artifactTypeN
+        warning('Annotation has fewer artifact types (%d) than interface expects (%d). Converting...', nArt, handles.artifactTypeN);
+        % Convert annotation to match current interface
+        handles.annotation = convertAnnot(handles.annotation, handles.settings.ARTIFACT_TYPES);
+        annot = handles.annotation{row};
+        [nCh, nSec, nArt] = size(annot);
+    end
     
     try
         annot = permute(annot(chs,sec,:),[1 3 2]);
@@ -2583,8 +2593,80 @@ function loadAnnotationsFromMat(filepath, handles)
         loadedTypes = data.artifactTypes;
         guiTypes = handles.settings.ARTIFACT_TYPES;
         if ~isequal(loadedTypes, guiTypes)
-            warning('Artifact types in loaded annotation do not match current GUI settings. Annotation will be converted.');
+            % Prompt the user for how to handle the mismatch
+            msg = sprintf(['The artifact types in the loaded annotation file differ from those in the GUI.\n\n' ...
+                'Annotation file: %s\nGUI: %s\n\nHow would you like to proceed?'], ...
+                strjoin(loadedTypes, ', '), strjoin(guiTypes, ', '));
+            choice = questdlg(msg, ...
+                'Artifact Type Mismatch', ...
+                'Rewrite GUI from annotation', ...   % Option 1
+                'Match by artifact name', ...        % Option 2
+                'Cancel', ...                        % Option 3
+                'Cancel');                           % Default
+            if strcmp(choice, 'Cancel')
+                return;
+            elseif strcmp(choice, 'Rewrite GUI from annotation')
+                % Option 1: Overwrite GUI artifact types with those from annotation
+                handles.settings.ARTIFACT_TYPES = loadedTypes;
+                handles.artifactTypeN = length(loadedTypes);
+                handles = initArtifButtons(handles);
+                guidata(handles.sigInspectMainWindow, handles);
+                setAnnot(handles, data.annotation);
+                msgbox('Annotations loaded from .mat file successfully.', 'Success');
+                return;
+            elseif strcmp(choice, 'Match by artifact name')
+                % Option 2: For each GUI artifact type, copy the corresponding slice from loaded annotation if it exists
+                nSignals = numel(data.annotation);
+                newAnnotation = cell(size(data.annotation));
+                matchedTypes = {};
+                unmatchedTypes = {};
+                for i = 1:nSignals
+                    oldAnnot = data.annotation{i};
+                    if isempty(oldAnnot)
+                        newAnnot = [];
+                    else
+                        [nCh, nSec, ~] = size(oldAnnot);
+                        nArt = length(guiTypes);
+                        newAnnot = false(nCh, nSec, nArt);
+                        for g = 1:nArt
+                            idxInLoaded = find(strcmp(guiTypes{g}, loadedTypes), 1);
+                            if ~isempty(idxInLoaded)
+                                newAnnot(:,:,g) = oldAnnot(:,:,idxInLoaded);
+                                if i == 1
+                                    matchedTypes{end+1} = guiTypes{g};
+                                end
+                            else
+                                if i == 1
+                                    unmatchedTypes{end+1} = guiTypes{g};
+                                end
+                            end
+                        end
+                    end
+                    newAnnotation{i} = newAnnot;
+                end
+                setAnnot(handles, newAnnotation);
+                % Explain what happened
+                if isempty(matchedTypes)
+                    loadedStr = '(none)';
+                else
+                    loadedStr = strjoin(matchedTypes, ', ');
+                end
+                if isempty(unmatchedTypes)
+                    notLoadedStr = '(none)';
+                else
+                    notLoadedStr = strjoin(unmatchedTypes, ', ');
+                end
+                msg = sprintf(['Annotations loaded for artifact types: %s\nArtifact types not loaded (no match in annotation file): %s'], loadedStr, notLoadedStr);
+                msgbox(msg, 'Artifact Type Matching');
+                return;
+            end
         end
+    else
+        % No artifact types in file - use convertAnnot to handle dimension mismatch
+        convertedAnnotation = convertAnnot(data.annotation, handles.settings.ARTIFACT_TYPES);
+        setAnnot(handles, convertedAnnotation);
+        msgbox('Annotations loaded from .mat file successfully (with dimension conversion).', 'Success');
+        return;
     end
 
     setAnnot(handles, data.annotation);
@@ -2989,28 +3071,61 @@ guidata(handles.sigInspectMainWindow, handles);
 
 % --- Executes on button press in adjustThresholdsBtn.
 function adjustThresholdsBtn_Callback(hObject, eventdata, handles)
-% Determine current thresholds or use defaults
-artifactNames = {'POW','BASE','FREQ'};
-% Check each threshold individually; if missing, use 0.5 as default
-artifactNames = {'POW','BASE','FREQ'};
-initialVals = 0.5*ones(1,3);
-for k = 1:3
-    art = artifactNames{k};
-    if isfield(handles, 'thresholds') && isfield(handles.thresholds, art)
-        initialVals(k) = handles.thresholds.(art);
+% This function adjusts thresholds for auto-labeled artifact types.
+
+% Define the default artifact names that svmThresholdGUI expects/handles.
+% These are typically the types generated by the SVM auto-labeling.
+defaultSvmArtifacts = {'POW', 'BASE', 'FREQ'};
+
+% Get the artifact types currently defined in the sigInspect interface.
+% These are the types shown in the main sigInspect window.
+if ~isfield(handles, 'settings') || ~isfield(handles.settings, 'ARTIFACT_TYPES')
+    warndlg('No artifact types defined in interface settings.', 'Settings Error', 'modal');
+    return;
+end
+
+% Get the artifact types currently defined in the sigInspect interface.
+% These are the types shown in the main sigInspect window.
+interfaceArtifacts = handles.settings.ARTIFACT_TYPES;
+
+% Find the intersection of interface artifact types and default SVM artifact types.
+% This ensures that only relevant auto-labeled types known to the interface are shown.
+% 'stable' preserves the order from interfaceArtifacts if common elements are found.
+[intersectedArtifacts, ~, ~] = intersect(interfaceArtifacts, defaultSvmArtifacts, 'stable');
+
+% If there are no common artifact types to adjust, inform the user and exit.
+if isempty(intersectedArtifacts)
+    warndlg('No common auto-labeled artifact types (POW, BASE, FREQ) found in current interface settings to adjust thresholds for.', 'No Adjustable Types', 'modal');
+    return;
+end
+
+fprintf('Found intersected artifact types for threshold adjustment: %s\n', strjoin(intersectedArtifacts, ', '));
+
+% Determine current thresholds for the intersected types or use defaults.
+initialVals = 0.5 * ones(1, length(intersectedArtifacts)); % Default to 0.5 for all
+for k = 1:length(intersectedArtifacts)
+    currentArt = intersectedArtifacts{k};
+    % Check if a threshold for this specific artifact type is already saved in handles.thresholds
+    if isfield(handles, 'thresholds') && isfield(handles.thresholds, currentArt)
+        initialVals(k) = handles.thresholds.(currentArt);
     end
 end
 
 % Show the same threshold GUI as in sigInspectAutoLabel
 if exist('svmThresholdGUI', 'file') == 2
-    result = svmThresholdGUI(initialVals);
+    result = svmThresholdGUI(initialVals, intersectedArtifacts);
     if isempty(result)
+        fprintf('Threshold adjustment cancelled by user.\n');
         return; % User cancelled
     end
     param = struct();
-    for k = 1:3
+    selectedArtifacts = {};
+    for k = 1:length(intersectedArtifacts)
         if result.include(k)
-            param.(artifactNames{k}) = struct('threshold', result.thresholds(k));
+            artName = intersectedArtifacts{k};
+            param.(artName) = struct('threshold', result.thresholds(k));
+            selectedArtifacts{end+1} = artName;
+            fprintf('Including %s with threshold %.2f\n', artName, result.thresholds(k));
         end
     end
 end
