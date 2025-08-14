@@ -2526,7 +2526,7 @@ guidata(handles.sigInspectMainWindow, handles);
 
 
 % --------------------------------------------------------------------
-function openTool_ClickedCallback(hObject, eventdata, handles)
+function handles = openTool_ClickedCallback(hObject, eventdata, handles)
     % Prompt user to select a file (either .mat or .csv)
     [file, path] = uigetfile({'*.mat;*.csv', 'MAT or CSV Files (*.mat, *.csv)'}, 'Load Annotations File');
     if isequal(file, 0)
@@ -2541,7 +2541,8 @@ function openTool_ClickedCallback(hObject, eventdata, handles)
     switch lower(ext)
         case '.mat'
             disp('loading annotations from mat file')
-            loadAnnotationsFromMat(filepath, handles);
+            handles = loadAnnotationsFromMat(filepath, handles);
+            guidata(handles.sigInspectMainWindow, handles);
         case '.csv'
             loadAnnotationsFromCsv(filepath, handles);
             disp('loading annotations from csv file')
@@ -2549,7 +2550,7 @@ function openTool_ClickedCallback(hObject, eventdata, handles)
             errordlg('Unsupported file type. Please select a .mat or .csv file.', 'Load Error');
     end
 
-function loadAnnotationsFromMat(filepath, handles)
+function handles = loadAnnotationsFromMat(filepath, handles)
     data = load(filepath);
 
     % Validate the structure of the .mat file (annotation and signalIds)
@@ -3092,6 +3093,7 @@ interfaceArtifacts = handles.settings.ARTIFACT_TYPES;
 % This ensures that only relevant auto-labeled types known to the interface are shown.
 % 'stable' preserves the order from interfaceArtifacts if common elements are found.
 [intersectedArtifacts, ~, ~] = intersect(interfaceArtifacts, defaultSvmArtifacts, 'stable');
+extraArtifacts = setdiff(interfaceArtifacts, defaultSvmArtifacts);
 
 % If there are no common artifact types to adjust, inform the user and exit.
 if isempty(intersectedArtifacts)
@@ -3122,16 +3124,30 @@ if exist('svmThresholdGUI', 'file') == 2
     selectedArtifacts = {};
     for k = 1:length(intersectedArtifacts)
         if result.include(k)
-            artName = intersectedArtifacts{k};
+            rawArtName = intersectedArtifacts{k};
+            artName = genvarname(rawArtName);
+            % Create params with thresholds for autolabelling function
             param.(artName) = struct('threshold', result.thresholds(k));
-            selectedArtifacts{end+1} = artName;
-            fprintf('Including %s with threshold %.2f\n', artName, result.thresholds(k));
+            selectedArtifacts{end+1} = rawArtName;
+            % Update thresholds into handles
+            handles.thresholds.(rawArtName) = result.thresholds(k);
         end
+    end
+    
+    % Store updated handles
+    guidata(hObject, handles);
+
+    for k = 1:length(extraArtifacts)
+         rawArtName = extraArtifacts{k};
+         artName = genvarname(rawArtName); % Sanitize the name 
+         a = find(strcmp(genvarname(interfaceArtifacts), artName), 1);
+         param.(artName) = struct('annotation', cellfun(@(x) x(:,:,a), handles.annotation, 'UniformOutput', false));
     end
 end
 
 % Re-run autolabeling with new thresholds
 intf = handles.interface;
+intf.settings.ARTIFACT_TYPES = interfaceArtifacts;
 samplingFreq = handles.samplingFreq;
 [annotation, annotationFile] = sigInspectAutoLabel(intf, [], samplingFreq, 'svm', param);
 
