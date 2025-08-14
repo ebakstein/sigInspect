@@ -67,15 +67,15 @@ end
 defaultSvmArtifacts = {'POW', 'BASE', 'FREQ'};
 
 % Get artifact types from interface or use defaults
-originalArtifactTypes = {};  % Store original types for preservation
+extraArtifacts = {};
 if(isprop(interface,'settings') && isfield(interface.settings,'ARTIFACT_TYPES'))
     interfaceArtifactTypes = interface.settings.ARTIFACT_TYPES;
-    originalArtifactTypes = interfaceArtifactTypes;  % Keep original order
     fprintf('interface_artifact_types = %s (from interface)\n', strjoin(interfaceArtifactTypes, ', '));
     
     if strcmpi(method, 'svm')
         % For SVM, find intersection between interface types and default SVM types
         [artifactTypesToProcess, ~, ~] = intersect(interfaceArtifactTypes, defaultSvmArtifacts, 'stable');
+        extraArtifacts = setdiff(interfaceArtifactTypes, defaultSvmArtifacts);
         if isempty(artifactTypesToProcess)
             % If no intersection, use default SVM types and warn user
             artifactTypesToProcess = defaultSvmArtifacts;
@@ -109,6 +109,8 @@ else
     end
 end
 Nartif = length(artifactTypes);
+fprintf('Processing %d artifact types...\n', Nartif);
+disp(artifactTypes)
 
 % default field to store automatic artifact in (for non-SVM methods)
 if(isprop(interface,'settings') && isfield(interface.settings,'ARTIFACT_AUTOLABEL_WHICH'))
@@ -128,21 +130,6 @@ else
     end
 end
 
-% Check if interface has existing annotations to preserve
-hasExistingAnnotations = false;
-existingAnnotations = {};
-if isprop(interface, 'getAnnotationsAll')
-    try
-        existingAnnotations = interface.getAnnotationsAll();
-        if ~isempty(existingAnnotations)
-            hasExistingAnnotations = true;
-            fprintf('Found existing annotations in interface - will preserve non-updated types\n');
-        end
-    catch
-        fprintf('No existing annotations found or interface does not support getAnnotationsAll()\n');
-    end
-end
-
 % init empty annotation array
 annotation=cell(length(signalIds),1);
 
@@ -156,12 +143,12 @@ if strcmpi(method, 'svm')
     else
         param = varargin{1};
         % Check which of our artifact types have thresholds defined
-        providedTypes = intersect(fieldnames(param), artifactTypesToProcess);
+        providedTypes = intersect(genvarname(fieldnames(param)), genvarname(artifactTypesToProcess));
         initialVals = 0.5 * ones(1, length(artifactTypesToProcess));
         
         % Set initial values for provided types
         for k = 1:length(artifactTypesToProcess)
-            artType = artifactTypesToProcess{k};
+            artType = genvarname((artifactTypesToProcess{k}));
             if ismember(artType, providedTypes) && isfield(param.(artType), 'threshold')
                 initialVals(k) = param.(artType).threshold;
             else
@@ -216,40 +203,50 @@ for ii=1:N
     % Initialize annotation matrix with existing annotations if available
     allAn = false(Nr,Nsec,Nartif); 
     
-    % If we have existing annotations, preserve them first
-    if hasExistingAnnotations && ii <= length(existingAnnotations) && ~isempty(existingAnnotations{ii})
-        existingAn = existingAnnotations{ii};
-        % Make sure dimensions match, pad if necessary
-        [eNr, eNsec, eNartif] = size(existingAn);
-        if eNr == Nr && eNsec == Nsec && eNartif == Nartif
-            allAn = existingAn;  % Use existing annotations as base
-            fprintf(' (preserving existing annotations)');
-        else
-            fprintf(' (existing annotation dimensions mismatch - creating new)');
-        end
-    end
-    
     if strcmpi(method, 'svm')
-        % Use param and artifactTypesToProcess for classification
-        curAn = sigInspectClassify(curSignals, sigId, samplingFreq, method, param);
+        % 1. Copy preserved annotations
+        if ~isempty(extraArtifacts)
+            for a = 1:length(extraArtifacts)
+                artType = genvarname(extraArtifacts{a});
+                artIdx = find(strcmp(genvarname(artifactTypes), artType), 1);
+                if ~isempty(artIdx) && isfield(param, artType) && ...
+                   isfield(param.(artType), 'annotation') && ...
+                   numel(param.(artType)) >= ii
         
-        % Update only the processed artifact types in their original positions
-        for a = 1:length(artifactTypesToProcess)
-            artType = artifactTypesToProcess{a};
-            % Find the position of this artifact type in the original list
-            artIdx = find(strcmp(artifactTypes, artType));
+                    % Copy the existing annotation matrix for this signal
+                    existingAnn = param.(artType)(ii).annotation;
+                    allAn(:,:,artIdx) = existingAnn;
+                    fprintf('\nExtra artifact %s copying to the position %d\n', artType, artIdx)
+                end
+            end
+        end
+
+        % 2. Classify only the selected artifact types
+        % If extraArtifact exists, remove them from param for classification
+        if ~isempty(extraArtifacts)
+           paramClassif = param;
+        else
+            paramClassif = rmfield(param, genvarname(extraArtifacts)); % remove preserved types
+        end
+        % Perform classification
+        curAn = sigInspectClassify(curSignals, sigId, samplingFreq, method, paramClassif);
+
+        % 3. Overwrite only the processed artifact types
+        procTypes = fieldnames(paramClassif);
+        for a = 1:length(procTypes)
+            artType = procTypes{a};
+            artIdx = find(strcmp(artifactTypes, artType), 1);
             if ~isempty(artIdx)
                 allAn(:,:,artIdx) = curAn(:,:,a);
             end
         end
+
         artSec = sum(any(any(curAn,3),2),1);
     else
         curAn = sigInspectClassify(curSignals, sigId, samplingFreq, method, varargin{:});
         allAn(:,:,artifactAutoWhich) = curAn;
         artSec = sum(any(curAn,3),2);
     end
-    %curAn = sigInspectClassify(curSignals,samplingFreq, method,varargin{:});        
-    %allAn(:,:,artifactAutoWhich)=curAn; % channel, second, artif. type
     
     % annot summary
     fprintf(' > %s artifact seconds in channels \n',sprintf('%d,',artSec))
@@ -274,7 +271,8 @@ if(nargout<1)
         thresholds = struct();
         for k = 1:length(artifactTypesToProcess)
             art = artifactTypesToProcess{k};
-            if isfield(param, art)
+            if isfield(param, art) && ...
+                   isfield(param.(art), 'threshold')
                 thresholds.(art) = param.(art).threshold;
             end
         end
@@ -293,7 +291,8 @@ else
         thresholds = struct();
         for k = 1:length(artifactTypesToProcess)
             art = artifactTypesToProcess{k};
-            if isfield(param, art)
+            if isfield(param, art) && ...
+                   isfield(param.(art), 'threshold')
                 thresholds.(art) = param.(art).threshold;
             end
         end
