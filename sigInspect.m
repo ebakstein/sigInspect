@@ -2594,19 +2594,10 @@ function handles = loadAnnotationsFromMat(filepath, handles)
         loadedTypes = data.artifactTypes;
         guiTypes = handles.settings.ARTIFACT_TYPES;
         if ~isequal(loadedTypes, guiTypes)
-            % Prompt the user for how to handle the mismatch
-            msg = sprintf(['The artifact types in the loaded annotation file differ from those in the GUI.\n\n' ...
-                'Annotation file: %s\nGUI: %s\n\nHow would you like to proceed?'], ...
-                strjoin(loadedTypes, ', '), strjoin(guiTypes, ', '));
-            choice = questdlg(msg, ...
-                'Artifact Type Mismatch', ...
-                'Rewrite GUI from annotation', ...   % Option 1
-                'Match by artifact name', ...        % Option 2
-                'Cancel', ...                        % Option 3
-                'Cancel');                           % Default
-            if strcmp(choice, 'Cancel')
+            choice = artifactTypeMismatchDialog(loadedTypes, guiTypes);
+            if isempty(choice) || strcmp(choice, 'Cancel')
                 return;
-            elseif strcmp(choice, 'Rewrite GUI from annotation')
+            elseif strcmp(choice, 'Rewrite')
                 % Option 1: Overwrite GUI artifact types with those from annotation
                 handles.settings.ARTIFACT_TYPES = loadedTypes;
                 handles.artifactTypeN = length(loadedTypes);
@@ -2615,7 +2606,7 @@ function handles = loadAnnotationsFromMat(filepath, handles)
                 setAnnot(handles, data.annotation);
                 msgbox('Annotations loaded from .mat file successfully.', 'Success');
                 return;
-            elseif strcmp(choice, 'Match by artifact name')
+            elseif strcmp(choice, 'Match')
                 % Option 2: For each GUI artifact type, copy the corresponding slice from loaded annotation if it exists
                 nSignals = numel(data.annotation);
                 newAnnotation = cell(size(data.annotation));
