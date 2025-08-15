@@ -407,8 +407,8 @@ function handles = initArtifButtons(handles)
     for ai=1:handles.internal.MaxArtifactTypes
         btnName=sprintf('annot%dBtn',ai);
         if(ai>handles.artifactTypeN)
-            delete(handles.(btnName));
-%             set(handles.(btnName),'Visible','off')
+            % delete(handles.(btnName));
+            set(handles.(btnName),'Visible','off')
         else
             set(handles.(btnName),'String',sprintf('F%d - %s',ai,handles.settings.ARTIFACT_TYPES{ai}))
             set(handles.(btnName),'Visible','on')
@@ -2542,7 +2542,6 @@ function handles = openTool_ClickedCallback(hObject, eventdata, handles)
         case '.mat'
             disp('loading annotations from mat file')
             handles = loadAnnotationsFromMat(filepath, handles);
-            guidata(handles.sigInspectMainWindow, handles);
         case '.csv'
             loadAnnotationsFromCsv(filepath, handles);
             disp('loading annotations from csv file')
@@ -2568,6 +2567,29 @@ function handles = loadAnnotationsFromMat(filepath, handles)
     if ~idsOk
         errordlg('SignalIds in the .mat file do not match loaded ones.', 'Load Error');
         return;
+    end
+
+    % Check annotation length vs expected windows
+    for i = 1:numel(data.signalIds)
+        if ~isempty(data.annotation{i})
+            [~, nWindows, ~] = size(data.annotation{i});
+            if iscell(handles.curSignals)
+                sigData = handles.curSignals{i};
+            else
+                sigData = handles.curSignals; % only one signal loaded
+            end
+            sigLenSamples = size(sigData, 2);
+            fs = handles.samplingFreq;
+            expectedWindows = floor(sigLenSamples / fs);
+
+            if nWindows > 1 && nWindows ~= expectedWindows
+                errordlg(sprintf(['Annotation length mismatch for signal "%s":\n' ...
+                                  'Expected %d windows, found %d in MAT file. Check sampling frequency.'], ...
+                                  data.signalIds{i}, expectedWindows, nWindows), ...
+                                  'Annotation Length Error');
+                return;
+            end
+        end
     end
 
     % Set method if present
@@ -2707,9 +2729,24 @@ function loadAnnotationsFromCsv(filepath, handles)
         numRows = size(signalData, 1);
         numChannels = size(signalData, 2) - 2;  % Excluding SignalId and TimeInSeconds columns
 
-        % Check if the annotations for this signal are complete
-        if any(all(ismissing(signalData{:, 3:end}), 2)) 
-            % Log the missing SignalId and create an empty annotation matrix
+        % Check if annotation length matches expected windows
+        sigIdx = find(strcmp(handles.signalIds, currentSignalId));
+        if ~isempty(sigIdx)
+            sigLenSamples = size(handles.signal{sigIdx}, 1); % length in samples
+            fs = handles.samplingFreq;       % sampling frequency
+            expectedWindows = floor(sigLenSamples / fs);    % 1-sec windows
+
+            if numRows > 1 && numRows ~= expectedWindows
+                errordlg(sprintf(['Annotation length mismatch for signal "%s":\n' ...
+                                  'Expected %d windows, found %d in CSV. Check sampling frequency.'], ...
+                                  currentSignalId, expectedWindows, numRows), ...
+                                  'Annotation Length Error');
+                return;
+            end
+        end
+
+        % Handle incomplete annotations (only 1 row or contains missing)
+        if numRows == 1 || any(all(ismissing(signalData{:, 3:end}), 2))
             missingAnnotations{end+1} = currentSignalId;
             annotations{end+1} = false(numChannels, numRowsPrev, numArtifactTypes); 
             continue; 
