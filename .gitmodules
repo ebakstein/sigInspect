@@ -1,0 +1,3 @@
+[submodule "ML-STIM"]
+	path = ML-STIM
+	url = https://github.com/Biolab-PoliTO/ML-STIM.git
