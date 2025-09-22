@@ -62,6 +62,32 @@ def load_data(filepath, metapath, artpath):
 # --------------------------
 # Utility functions
 # --------------------------
+def decode_artifacts(annotations, order=None):
+    """
+    Decode artifact annotations into a boolean indicator.
+    
+    Parameters
+    ----------
+    annotations : array-like
+        Numeric annotations (0 = clean, >0 = some artifact, or sums of powers of 2).
+    order : int or None, optional
+        - If int: check specific artifact type 
+          (order=1 -> mask=1, order=2 -> mask=2, order=3 -> mask=4, etc).
+        - If None: return True if any artifact is present (annotation > 0).
+    
+    Returns
+    -------
+    binary : ndarray
+        Boolean array of shape (len(annotations),).
+    """
+    annotations = np.asarray(annotations, dtype=int)
+
+    if order is None:
+        return annotations > 0
+    else:
+        mask = 2**(order-1)
+        return (annotations & mask) > 0
+
 def adjust_annotations_to_halfsec(annotations_1s):
     """
     Expand 1-second expert annotations into 0.5-second resolution.
@@ -69,8 +95,8 @@ def adjust_annotations_to_halfsec(annotations_1s):
     """
     # Drop NaNs at the tail (padding)
     valid = annotations_1s[~np.isnan(annotations_1s)]
-    # Convert to binary (any artifact type > 0 → 1)
-    valid = (valid > 0).astype(int)
+    # Convert to binary (any artifact type > 0 → order = None, otherwise checks for specified artifact type by order)
+    valid = decode_artifacts(valid, order=1)
     # Expand each 1s label into two 0.5s labels
     return np.repeat(valid, 2)
 
@@ -192,6 +218,6 @@ if __name__ == "__main__":
 
     df_metrics, all_masks, summary_df = process_all_recordings(
         raw_data, lens, artifacts, fsamp, meta,
-        csv_path="artifact_metrics.csv"
+        csv_path="artifact_metrics_POW.csv"
     )
 
