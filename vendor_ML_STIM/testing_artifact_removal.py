@@ -146,13 +146,14 @@ def process_recording_artifacts(recording, fsamp, b, a):
 # Batch processing
 # --------------------------
 def process_all_recordings(raw_data, lens, artifacts, fsamp, meta,
-                           csv_path="artifact_stats.csv"):
+                           excel_path="artifact_stats.xlsx"):
     metrics_list = []
     all_winMasks = []
+    all_annotations = [] 
     
     b, a = lib.initialize_filter_coefficients(fsamp)
 
-    for idx in range(raw_data.shape[0]):
+    for idx in range(100): #raw_data.shape[0]):
         print(f"Processing recording {idx+1}/{raw_data.shape[0]}", end='\r')
         recording = raw_data[idx, :lens[idx]]
         mlstim_mask = process_recording_artifacts(recording, fsamp, b, a)
@@ -167,9 +168,15 @@ def process_all_recordings(raw_data, lens, artifacts, fsamp, meta,
 
         # Align with ML-STIM
         y_true, y_pred = align_annotations(expert_halfsec, mlstim_mask)
-        # print(f"Processing recording {idx+1}")
-        # print(y_true)
-        # print(y_pred)
+
+        # Save per-window annotations
+        df_ann = pd.DataFrame({
+            "recording": idx,
+            "window_idx": np.arange(len(y_true)),
+            "true_class": y_true,
+            "pred_class": y_pred
+        })
+        all_annotations.append(df_ann)
 
         # Metrics
         metrics = compute_metrics(y_true, y_pred)
@@ -178,31 +185,33 @@ def process_all_recordings(raw_data, lens, artifacts, fsamp, meta,
 
         all_winMasks.append(mlstim_mask)
 
-    # Save per-recording metrics
+    # Combine into DataFrames
     df_metrics = pd.DataFrame(metrics_list)
-    df_metrics.to_csv(csv_path, index=False)
-    print(f"\nSaved metrics to {csv_path}")
+    df_annotations = pd.concat(all_annotations, ignore_index=True)
 
     # Summary (mean ± std)
     metrics_only = df_metrics.drop(columns=["confusion_matrix", "recording"])
     summary_mean = metrics_only.mean()
     summary_std = metrics_only.std()
-
     summary_df = pd.DataFrame({
         "metric": summary_mean.index,
         "mean": summary_mean.values,
         "std": summary_std.values
     })
 
-    summary_path = csv_path.replace(".csv", "_summary.csv")
-    summary_df.to_csv(summary_path, index=False)
-    print(f"Saved summary metrics to {summary_path}")
+    # Save everything to one Excel file with sheets
+    with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
+        df_metrics.to_excel(writer, sheet_name="metrics", index=False)
+        df_annotations.to_excel(writer, sheet_name="annotations", index=False)
+        summary_df.to_excel(writer, sheet_name="summary", index=False)
 
+    print(f"\nSaved all results to {excel_path}")
     print("\nOverall Performance Summary (mean ± std):")
     for metric, m, s in zip(summary_mean.index, summary_mean.values, summary_std.values):
         print(f"{metric:12s}: {m:.3f} ± {s:.3f}")
 
-    return df_metrics, all_winMasks, summary_df
+    return df_metrics, all_winMasks, summary_df, df_annotations
+
 
 # --------------------------
 # Main
@@ -216,8 +225,8 @@ if __name__ == "__main__":
     raw_data, clss, lens, meta, artifacts = load_data(filepath, metapath, artpath)
     fsamp = 24000
 
-    df_metrics, all_masks, summary_df = process_all_recordings(
+    df_metrics, all_winMasks, summary_df, df_annotations = process_all_recordings(
         raw_data, lens, artifacts, fsamp, meta,
-        csv_path="artifact_metrics_POW.csv"
+        excel_path="artifact_metrics_ARTIF.xlsx"
     )
 
