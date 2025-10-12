@@ -102,14 +102,14 @@ switch(method)
         covThr = 1.2;
         winLength = .25;
         aggregPerc = winLength;
-        if(nargin > 3)
+        if(nargin > 4)
             if(isnumeric(varargin{1}) && varargin{1} >= 1)
                 covThr = varargin{1};    
             else
                 error('fourth parameter for COV method is threshold (numeric, greater or equal to 1)')
             end
         end          
-        if(nargin>4)
+        if(nargin > 5)
             if(isnumeric(varargin{2}) && varargin{2}>0 && varargin{2} <1)
                 winLength = varargin{2};    
                 aggregPerc = winLength; % default value for aggregPerc: windowLength
@@ -117,9 +117,9 @@ switch(method)
                 error('fifth parameter for COV method is win length (between 0-1 s)')
             end
         end
-        if(nargin > 5)
+        if(nargin > 6)
             if(isnumeric(varargin{3}) && varargin{3} <= 1 && varargin{3} > 0)
-                covThr = varargin{3};    
+                aggregPerc = varargin{3};    
             else
                 error('sixth parameter for COV method is aggregation threshold (numeric, greater than 0, lower or equal to 1, multiple of winLength)')
             end
@@ -174,7 +174,12 @@ end
 
 % ---- COMPUTE FEATURES ----
 cacheFile = 'featuresCache.mat'; % or full path if needed
-featVals = getOrComputeFeatures(signal, signalId, method, featNames, fs, cacheFile);
+if ~strcmpi(method, 'cov')
+    featVals = getOrComputeFeatures(signal, signalId, method, featNames, fs, cacheFile);
+else
+    featVals = [];
+end
+
 
 % ---- CLASSIFY ----
 switch(method)

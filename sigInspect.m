@@ -28,7 +28,7 @@ function varargout = sigInspect(varargin)
 
 % Edit the above text to modify the response to help sigInspect
 
-% Last Modified by GUIDE v2.5 14-Jul-2025 15:22:07
+% Last Modified by GUIDE v2.5 28-Sep-2025 10:50:01
 
 
 % Begin initialization code - DO NOT EDIT
@@ -2595,6 +2595,7 @@ function handles = loadAnnotationsFromMat(filepath, handles)
     % Set method if present
     if isfield(data, 'method')
         handles.method = data.method;
+        disp('Method is available');
     else
         if isfield(handles, 'method')
             handles = rmfield(handles, 'method');
@@ -3206,5 +3207,131 @@ function updateAdjustThresholdsBtnVisibility(handles)
             set(handles.adjustThresholdsBtn, 'Visible', 'off');
         end
     end
+
+% --- Executes on button press in autoLabelBtn.
+function autoLabelBtn_Callback(hObject, eventdata, handles)
+% Auto-label signals using selected classification method.
+%
+% This callback:
+%   - Ensures data is loaded
+%   - Prompts the user for classification method
+%   - Requests method-specific parameters
+%   - Runs auto-labeling via sigInspectAutoLabel
+%   - Updates GUI annotations automatically
+
+    % --- 1. Check for loaded data ---
+    if ~isfield(handles, 'interface') || isempty(handles.interface)
+        errordlg('Please load signal data first before running auto-labeling.', ...
+                 'No Data Loaded', 'modal');
+        return;
+    end
+    dataH = handles.interface;
+
+    if ~isfield(handles, 'samplingFreq') || isempty(handles.samplingFreq)
+        handles.samplingFreq = 24000; % default fallback
+    end
+    fs = handles.samplingFreq;
+
+    % --- 2. Ask user to choose classification method ---
+    methods = {'psd', 'tree', 'cov', 'svm'};
+    [idx, ok] = listdlg('PromptString', 'Select Auto-Labeling Method:', ...
+                        'SelectionMode', 'single', ...
+                        'ListString', methods, ...
+                        'ListSize', [240 120]);
+    if ~ok || isempty(idx)
+        return; % user cancelled
+    end
+    method = methods{idx};
+
+    % --- 3. Prepare method-specific parameters ---
+    params = {};
+    artifactTypes = {};
+    thresholds = struct();
+
+    switch lower(method)
+        case 'psd'
+            prompt = {'Enter PSD threshold (default: 0.01):'};
+            def = {'0.01'};
+            answ = inputdlg(prompt, 'PSD Parameters', [1 40], def);
+            if isempty(answ), return; end
+            params = {str2double(answ{1})};
+
+        case 'tree'
+            % no parameters required
+            msgbox('Decision tree classifier selected (no parameters required).', ...
+                   'Tree Classifier', 'modal');
+
+        case 'cov'
+            prompt = {'Threshold (default: 1.2):', ...
+                      'Window length (0–1 s, default: 0.25):', ...
+                      'Aggregation proportion (0–1, default: 0.25):'};
+            def = {'1.2', '0.25', '0.25'};
+            answ = inputdlg(prompt, 'Covariance Parameters', [1 50], def);
+            if isempty(answ), return; end
+            params = {str2double(answ{1}), str2double(answ{2}), str2double(answ{3})};
+
+        case 'svm'
+            % define artifact types
+            artifactTypes = {'POW', 'BASE', 'FREQ'};
+            prompt = {'POW threshold (default: 0.5):', ...
+                      'BASE threshold (default: 0.5):', ...
+                      'FREQ threshold (default: 0.5):'};
+            def = {'0.5', '0.0', '0.5'};
+            answ = inputdlg(prompt, 'SVM Parameters', [1 50], def);
+            if isempty(answ), return; end
+
+            % construct parameter struct
+            param = struct();
+            for i = 1:numel(artifactTypes)
+                thresholds.(artifactTypes{i}) = str2double(answ{i});
+                param.(artifactTypes{i}) = struct('threshold', str2double(answ{i}));
+            end
+            params = {param};
+    end
+
+    % --- 4. Set artifact types in GUI ---
+    if strcmpi(method, 'svm')
+        newArtifactTypes = artifactTypes; % POW, BASE, FREQ
+    else
+        newArtifactTypes = {'ARTIF', 'UNSURE'};
+    end
+    handles.settings.ARTIFACT_TYPES = newArtifactTypes;
+    handles.interface.settings.ARTIFACT_TYPES = newArtifactTypes;
+    handles.artifactTypeN = numel(newArtifactTypes);
+    handles = initArtifButtons(handles);
+    guidata(handles.sigInspectMainWindow, handles);
+
+    % --- 5. Run auto-labeling ---
+    hWait = waitbar(0.4, ['Running auto-labeling (', upper(method), ')...'], ...
+                    'Name', 'Auto-Labeling');
+
+    try
+        % sigInspectAutoLabel internally calls sigInspectClassify
+        [annotation, ~] = sigInspectAutoLabel(dataH, [], fs, method, params{:});
+        handles = applySvmMetadataToHandles(handles, method, thresholds);
+        
+        % --- 6. Update GUI with annotations ---
+        setAnnot(handles, annotation);
+
+        msgbox(['Auto-labeling complete using "', upper(method), ...
+                '" method. Annotations updated.'], 'Success', 'modal');
+    catch ME
+        errordlg(['Auto-labeling failed: ' ME.message], 'Error', 'modal');
+    end
+
+    delete(hWait);
+
+function handles = applySvmMetadataToHandles(handles, method, thresholds)
+    % Updates the handles structure with SVM-related metadata.
+    handles.method = method;
+
+    if ~isempty(thresholds)
+        handles.thresholds = thresholds;
+    else
+        handles.thresholds = struct(); % keep empty struct if not provided
+    end
+
+    % --- Update GUI visibility for thresholds ---
+    updateAdjustThresholdsBtnVisibility(handles);
 
 
