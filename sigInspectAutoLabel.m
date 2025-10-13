@@ -224,9 +224,9 @@ for ii=1:N
         % 2. Classify only the selected artifact types
         % If extraArtifact exists, remove them from param for classification
         if ~isempty(extraArtifacts)
-           paramClassif = param;
+           paramClassif = rmfield(param, genvarname(extraArtifacts)); % remove preserved types
         else
-            paramClassif = rmfield(param, genvarname(extraArtifacts)); % remove preserved types
+            paramClassif = param;
         end
         % Perform classification
         curAn = sigInspectClassify(curSignals, sigId, samplingFreq, method, paramClassif);
