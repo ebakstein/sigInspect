@@ -1,4 +1,4 @@
-function [annotation, annotationFile] = sigInspectAutoLabel(interfSignalOrPath, pathToSave, samplingFreq, method, varargin)
+function [annotation, annotationFile, params] = sigInspectAutoLabel(interfSignalOrPath, pathToSave, samplingFreq, method, varargin)
 % annot = sigInspectAutoLabel(iterfSignalOrPath, pathToSave, samplingFreq, method, params)  
 %   label all signals from provided cell array or interface using pre-learned 
 %   classifier, return/save annot
@@ -51,6 +51,18 @@ if(N==0)
     error('No signals loaded')
 end
 
+% Artifact types
+if strcmpi(method,'svm')
+    artifactTypes = {'POW','BASE','FREQ'};
+elseif isprop(interface,'settings') && isfield(interface.settings,'ARTIFACT_TYPES')
+    artifactTypes = interface.settings.ARTIFACT_TYPES;
+else
+    artifactTypes = {'ARTIF','UNSURE'};
+end
+Nartif = length(artifactTypes);
+fprintf('Artifact types: %s\n', strjoin(artifactTypes, ', '));
+
+
 % sampling freq. - from interface or so
 if(isprop(interface,'settings') && isfield(interface.settings,'SAMPLING_FREQ'))
     samplingFreq = interface.settings.SAMPLING_FREQ;
@@ -64,53 +76,10 @@ else
     end
 end
 
-defaultSvmArtifacts = {'POW', 'BASE', 'FREQ'};
 
-% Get artifact types from interface or use defaults
-extraArtifacts = {};
-if(isprop(interface,'settings') && isfield(interface.settings,'ARTIFACT_TYPES'))
-    interfaceArtifactTypes = interface.settings.ARTIFACT_TYPES;
-    fprintf('interface_artifact_types = %s (from interface)\n', strjoin(interfaceArtifactTypes, ', '));
-    
-    if strcmpi(method, 'svm')
-        % For SVM, find intersection between interface types and default SVM types
-        [artifactTypesToProcess, ~, ~] = intersect(interfaceArtifactTypes, defaultSvmArtifacts, 'stable');
-        extraArtifacts = setdiff(interfaceArtifactTypes, defaultSvmArtifacts);
-        if isempty(artifactTypesToProcess)
-            % If no intersection, use default SVM types and warn user
-            artifactTypesToProcess = defaultSvmArtifacts;
-            fprintf('WARNING: No common artifact types found between interface (%s) and SVM defaults (%s)\n', ...
-                strjoin(interfaceArtifactTypes, ', '), strjoin(defaultSvmArtifacts, ', '));
-            fprintf('Using SVM defaults: %s\n', strjoin(artifactTypesToProcess, ', '));
-            % Use SVM defaults as the final artifact types (no existing annotations to preserve)
-            artifactTypes = artifactTypesToProcess;
-        else
-            fprintf('Using intersected artifact types: %s\n', strjoin(artifactTypesToProcess, ', '));
-            % Use original interface types as final types (to preserve order and existing annotations)
-            artifactTypes = interfaceArtifactTypes;
-        end
-    else
-        % For non-SVM methods, use interface types as-is
-        artifactTypes = interfaceArtifactTypes;
-        artifactTypesToProcess = interfaceArtifactTypes;
-    end
-    
-    fprintf('number_of_artifact_types = %d (processed from interface)\n', length(artifactTypesToProcess));
-else
-    % No interface settings - use method-specific defaults
-    if strcmpi(method, 'svm')
-        artifactTypes = defaultSvmArtifacts;
-        artifactTypesToProcess = defaultSvmArtifacts;
-        fprintf('number_of_artifact_types = %d (DEFAULT SVM: %s)\n', length(artifactTypes), strjoin(artifactTypes, ', '));
-    else
-        artifactTypes = {'ARTIF','UNSURE'};
-        artifactTypesToProcess = {'ARTIF','UNSURE'};
-        fprintf('number_of_artifact_types = %d (DEFAULT NON-SVM: %s)\n', length(artifactTypes), strjoin(artifactTypes, ', '));
-    end
-end
-Nartif = length(artifactTypes);
-fprintf('Processing %d artifact types...\n', Nartif);
-disp(artifactTypes)
+% Placeholder for potential annotation copying logic - if the logic of
+% matching artifact type names is implemented, TODO this part
+% (Currently disabled — left here intentionally)
 
 % default field to store automatic artifact in (for non-SVM methods)
 if(isprop(interface,'settings') && isfield(interface.settings,'ARTIFACT_AUTOLABEL_WHICH'))
@@ -133,59 +102,27 @@ end
 % init empty annotation array
 annotation=cell(length(signalIds),1);
 
-% SVM threshold GUI logic
-if strcmpi(method, 'svm')
-    showThresholdGUI = false;
-    if isempty(varargin) || isempty(varargin{1}) || ~isstruct(varargin{1})
-        showThresholdGUI = true;
-        initialVals = [0.5 0.5 0.5];
-        param = struct();
+% params definition
+if isempty(varargin)
+    params = [];
+else
+    % if user passed a single struct as last arg, take it
+    if numel(varargin) == 1
+        params = varargin{1};
     else
-        param = varargin{1};
-        % Check which of our artifact types have thresholds defined
-        providedTypes = intersect(genvarname(fieldnames(param)), genvarname(artifactTypesToProcess));
-        initialVals = 0.5 * ones(1, length(artifactTypesToProcess));
-        
-        % Set initial values for provided types
-        for k = 1:length(artifactTypesToProcess)
-            artType = genvarname((artifactTypesToProcess{k}));
-            if ismember(artType, providedTypes) && isfield(param.(artType), 'threshold')
-                initialVals(k) = param.(artType).threshold;
-            else
-                showThresholdGUI = true;
-            end
-        end
-        
-        % If not all artifact types have thresholds, show GUI
-        if length(providedTypes) < length(artifactTypesToProcess)
-            showThresholdGUI = true;
-        end
+        % otherwise follow original behaviour (varargin{:}) but safer
+        params = varargin;
     end
-    if showThresholdGUI
-        % Pass the artifact types we're actually processing to the GUI
-        result = svmThresholdGUI(initialVals, artifactTypesToProcess);
-        if isempty(result)
-            error('SVM threshold selection cancelled by user.');
-        end
-        param = struct();
-        for k = 1:length(artifactTypesToProcess)
-            if result.include(k)
-                param.(artifactTypesToProcess{k}) = struct('threshold', result.thresholds(k));
-            end
-        end
+end
 
-        % Update artifactTypesToProcess to only include selected types
-        selectedTypes = artifactTypesToProcess(result.include);
-        if isempty(selectedTypes)
-            error('No artifact types selected for classification.');
+% SVM threshold GUI logic (minimal: show GUI if no params passed)
+if strcmpi(method, 'svm')
+    if isempty(params) || ~isstruct(params)
+        params = svmThresholdGUI();
+        if isempty(params)
+            return
         end
-        artifactTypesToProcess = selectedTypes;
-    else
-        % Update artifactTypesToProcess to only include types with parameters
-        artifactTypesToProcess = fieldnames(param);
     end
-    
-    fprintf('Will process artifact types: %s\n', strjoin(artifactTypesToProcess, ', '));
 end
 
 fprintf(' ... initialization done\n');
@@ -203,47 +140,12 @@ for ii=1:N
     % Initialize annotation matrix with existing annotations if available
     allAn = false(Nr,Nsec,Nartif); 
     
-    if strcmpi(method, 'svm')
-        % 1. Copy preserved annotations
-        if ~isempty(extraArtifacts)
-            for a = 1:length(extraArtifacts)
-                artType = genvarname(extraArtifacts{a});
-                artIdx = find(strcmp(genvarname(artifactTypes), artType), 1);
-                if ~isempty(artIdx) && isfield(param, artType) && ...
-                   isfield(param.(artType), 'annotation') && ...
-                   numel(param.(artType)) >= ii
-        
-                    % Copy the existing annotation matrix for this signal
-                    existingAnn = param.(artType)(ii).annotation;
-                    allAn(:,:,artIdx) = existingAnn;
-                    fprintf('\nExtra artifact %s copying to the position %d\n', artType, artIdx)
-                end
-            end
-        end
-
-        % 2. Classify only the selected artifact types
-        % If extraArtifact exists, remove them from param for classification
-        if ~isempty(extraArtifacts)
-           paramClassif = rmfield(param, genvarname(extraArtifacts)); % remove preserved types
-        else
-            paramClassif = param;
-        end
-        % Perform classification
-        curAn = sigInspectClassify(curSignals, sigId, samplingFreq, method, paramClassif);
-
-        % 3. Overwrite only the processed artifact types
-        procTypes = fieldnames(paramClassif);
-        for a = 1:length(procTypes)
-            artType = procTypes{a};
-            artIdx = find(strcmp(artifactTypes, artType), 1);
-            if ~isempty(artIdx)
-                allAn(:,:,artIdx) = curAn(:,:,a);
-            end
-        end
-
+    curAn = sigInspectClassify(curSignals, sigId, samplingFreq, method, params);
+    % ensure curAn has 3 dimensions (Nch × Nsec × Nart)
+    if size(curAn,3) > 1
+        allAn(:,:,:) = curAn;
         artSec = sum(any(any(curAn,3),2),1);
     else
-        curAn = sigInspectClassify(curSignals, sigId, samplingFreq, method, varargin{:});
         allAn(:,:,artifactAutoWhich) = curAn;
         artSec = sum(any(curAn,3),2);
     end
@@ -253,65 +155,21 @@ for ii=1:N
     
     % store 
     annotation{ii} = allAn;
-    % pad to artifact type count Nartif
-    % annotation{ii} = padarray(allAn,[0 0 (Nartif-size(allAn,3))],0,'post');
-        
 end
 
 fprintf('DONE: signals labelled in %.2f seconds----\n',toc)
 
-% save annotation to *.mat file
-annotationFile = '';
-if(nargout<1)
-    if(nargin<2 || isempty(pathToSave))
-        pathToSave = sprintf('sigInspectAutoAnnotation%s.mat',datestr(now,'yyyy-mm-dd-HHMMSS'));
-    end
-    interfaceClass = class(interface);
-    if strcmpi(method, 'svm')
-        thresholds = struct();
-        for k = 1:length(artifactTypesToProcess)
-            art = artifactTypesToProcess{k};
-            if isfield(param, art) && ...
-                   isfield(param.(art), 'threshold')
-                thresholds.(art) = param.(art).threshold;
-            end
-        end
-        save(pathToSave,'annotation','signalIds','artifactTypes','interfaceClass','thresholds','method')
-    else
-        save(pathToSave,'annotation','signalIds','artifactTypes','interfaceClass','method')
-    end
-    fprintf('ANNOTATION SAVED TO: %s\n',pathToSave)
-    annotationFile = pathToSave;
-else
-    if(nargin<2 || isempty(pathToSave))
-        pathToSave = sprintf('sigInspectAutoAnnotation%s.mat',datestr(now,'yyyy-mm-dd-HHMMSS'));
-    end
-    interfaceClass = class(interface);
-    if strcmpi(method, 'svm')
-        thresholds = struct();
-        for k = 1:length(artifactTypesToProcess)
-            art = artifactTypesToProcess{k};
-            if isfield(param, art) && ...
-                   isfield(param.(art), 'threshold')
-                thresholds.(art) = param.(art).threshold;
-            end
-        end
-        save(pathToSave,'annotation','signalIds','artifactTypes','interfaceClass','thresholds','method')
-    else
-        save(pathToSave,'annotation','signalIds','artifactTypes','interfaceClass','method')
-    end
-    fprintf('ANNOTATION SAVED TO: %s\n',pathToSave)
-    annotationFile = pathToSave;
+% save annotation 
+% if(nargout<1)
+if(nargin<2 || isempty(pathToSave))
+    pathToSave = sprintf('sigInspectAutoAnnotation_%s_%s.mat',...
+        lower(method), datestr(now,'yyyy-mm-dd-HHMMSS'));
 end
+interfaceClass = class(interface);
+save(pathToSave,'annotation','signalIds','artifactTypes','interfaceClass','method', 'params')
+fprintf('Saved annotation + params to: %s\n', pathToSave);
+annotationFile = pathToSave;
 
-% Return additional parameters for SVM method
-if nargout > 2
-    if strcmpi(method, 'svm')
-        svmParams = param;
-    else
-        svmParams = [];
-    end
-end
 
 
 %% ---- support functions: handling inputs & outputs

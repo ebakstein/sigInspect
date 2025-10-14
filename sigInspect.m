@@ -2604,11 +2604,11 @@ function handles = loadAnnotationsFromMat(filepath, handles)
     updateAdjustThresholdsBtnVisibility(handles);
 
     % Set thresholds if present
-    if isfield(data, 'thresholds')
-        handles.thresholds = data.thresholds;
+    if isfield(data, 'params')
+        handles.params = data.params;
     else
-        if isfield(handles, 'thresholds')
-            handles = rmfield(handles, 'thresholds');
+        if isfield(handles, 'params')
+            handles = rmfield(handles, 'params');
         end
     end
 
@@ -2621,35 +2621,35 @@ function handles = loadAnnotationsFromMat(filepath, handles)
             if isempty(choice) || strcmp(choice, 'Cancel')
                 return;
             elseif strcmp(choice, 'Rewrite')
-                % Option 1: Overwrite GUI artifact types with those from annotation
+                % Option: Overwrite GUI artifact types with those from annotation
                 handles = syncArtifactTypes(handles, loadedTypes);
                 guidata(handles.sigInspectMainWindow, handles);
                 setAnnot(handles, data.annotation);
                 msgbox('Annotations loaded from .mat file successfully.', 'Success');
                 return;
-            elseif strcmp(choice, 'Match')
-                % Option 2: For each GUI artifact type, copy the corresponding slice from loaded annotation if it exists
-                try
-                    [newAnnotation, matchedTypes, unmatchedTypes] = matchArtifactTypes(loadedTypes, guiTypes, data.annotation);
-                catch ME
-                    errordlg(['Artifact type matching failed: ' ME.message], 'Error', 'modal');
-                    return;
-                end
-                setAnnot(handles, newAnnotation);
-
-                if isempty(matchedTypes)
-                    loadedStr = '(none)';
-                else
-                    loadedStr = strjoin(matchedTypes, ', ');
-                end
-                if isempty(unmatchedTypes)
-                    notLoadedStr = '(none)';
-                else
-                    notLoadedStr = strjoin(unmatchedTypes, ', ');
-                end
-                msg = sprintf(['Annotations loaded for artifact types: %s\nArtifact types not loaded (no match in annotation file): %s'], loadedStr, notLoadedStr);
-                msgbox(msg, 'Artifact Type Matching');
-                return;
+            % elseif strcmp(choice, 'Match')
+            %     % Option: For each GUI artifact type, copy the corresponding slice from loaded annotation if it exists
+            %     try
+            %         [newAnnotation, matchedTypes, unmatchedTypes] = matchArtifactTypes(loadedTypes, guiTypes, data.annotation);
+            %     catch ME
+            %         errordlg(['Artifact type matching failed: ' ME.message], 'Error', 'modal');
+            %         return;
+            %     end
+            %     setAnnot(handles, newAnnotation);
+            % 
+            %     if isempty(matchedTypes)
+            %         loadedStr = '(none)';
+            %     else
+            %         loadedStr = strjoin(matchedTypes, ', ');
+            %     end
+            %     if isempty(unmatchedTypes)
+            %         notLoadedStr = '(none)';
+            %     else
+            %         notLoadedStr = strjoin(unmatchedTypes, ', ');
+            %     end
+            %     msg = sprintf(['Annotations loaded for artifact types: %s\nArtifact types not loaded (no match in annotation file): %s'], loadedStr, notLoadedStr);
+            %     msgbox(msg, 'Artifact Type Matching');
+            %     return;
             end
         end
     else
@@ -3087,7 +3087,6 @@ end
 defaultSvmArtifacts = getDefaultArtifactTypes('svm');
 interfaceArtifacts = handles.settings.ARTIFACT_TYPES;
 [intersectedArtifacts, ~, ~] = intersect(interfaceArtifacts, defaultSvmArtifacts, 'stable');
-extraArtifacts = setdiff(interfaceArtifacts, defaultSvmArtifacts);
 
 % If there are no common artifact types to adjust, inform the user and exit.
 if isempty(intersectedArtifacts)
@@ -3095,42 +3094,19 @@ if isempty(intersectedArtifacts)
         'No Adjustable Types', 'modal');
     return;
 end
-fprintf('Found intersected artifact types for threshold adjustment: %s\n', strjoin(intersectedArtifacts, ', '));
+
 
 % Prepare initial values from handles.thresholds (or defaults)
 initialVals = getArtifactThresholds(handles, intersectedArtifacts, 0.5);
-disp(initialVals)
 
 % Show threshold GUI
 [result, ok] = promptThresholdsGUI(intersectedArtifacts, initialVals);
 if ~ok
-    fprintf('Threshold adjustment cancelled by user or GUI unavailable.\n');
     return;
 end
 
 % Build param struct for sigInspectAutoLabel and update handles.thresholds
 [param, handles] = buildThresholdParams(handles, intersectedArtifacts, result);
-
-% Add "extraArtifacts" annotation slices into param if needed (preserve old behavior)
-if ~isempty(extraArtifacts)
-    interfaceArtifactsGen = cellfun(@genvarname, interfaceArtifacts, 'UniformOutput', false);
-    for k = 1:numel(extraArtifacts)
-        rawArtName = extraArtifacts{k};
-        artName = genvarname(rawArtName);
-        a = find(strcmp(interfaceArtifactsGen, artName), 1);
-        if ~isempty(a) && isfield(handles, 'annotation')
-            % Keep compatibility with original: param.(artName).annotation = slices per-signal
-            % Build a cell array matching handles.annotation shape
-            try
-                param.(artName) = struct('annotation', cellfun(@(x) x(:,:,a), handles.annotation, 'UniformOutput', false));
-                disp(artName)
-            catch
-                % If annotation absent or slices mismatch, skip gracefully
-                param.(artName) = struct('annotation', {});
-            end
-        end
-    end
-end
 
 % Persist updated handles
 guidata(hObject, handles);
@@ -3138,8 +3114,7 @@ guidata(hObject, handles);
 % Re-run autolabeling with new thresholds
 try
     handles = syncArtifactTypes(handles,interfaceArtifacts);
-    disp(param)
-    [annotation, ~] = sigInspectAutoLabel(handles.interface, [], handles.samplingFreq, 'svm', param);
+    [annotation, ~, param] = sigInspectAutoLabel(handles.interface, [], handles.samplingFreq, 'svm', param);
     setAnnot(handles, annotation);
     msgbox('Annotation updated with new thresholds!', 'Success');
 catch ME
@@ -3173,100 +3148,83 @@ function updateAdjustThresholdsBtnVisibility(handles)
 % --- Executes on button press in autoLabelBtn.
 function autoLabelBtn_Callback(hObject, eventdata, handles)
 % Auto-label signals using selected classification method.
-%
-% This callback:
-%   - Ensures data is loaded
-%   - Prompts the user for classification method
-%   - Requests method-specific parameters
-%   - Runs auto-labeling via sigInspectAutoLabel
-%   - Updates GUI annotations automatically
+% Check for loaded data
+if ~isfield(handles, 'interface') || isempty(handles.interface)
+    errordlg('Please load signal data first before running auto-labeling.', ...
+             'No Data Loaded', 'modal');
+    return;
+end
 
-    % --- 1. Check for loaded data ---
-    if ~isfield(handles, 'interface') || isempty(handles.interface)
-        errordlg('Please load signal data first before running auto-labeling.', ...
-                 'No Data Loaded', 'modal');
-        return;
-    end
+if ~isfield(handles, 'samplingFreq') || isempty(handles.samplingFreq)
+    handles.samplingFreq = 24000; % default fallback
+end
+fs = handles.samplingFreq;
 
-    if ~isfield(handles, 'samplingFreq') || isempty(handles.samplingFreq)
-        handles.samplingFreq = 24000; % default fallback
-    end
-    fs = handles.samplingFreq;
+% Ask user to choose classification method
+methods = {'psd', 'tree', 'cov', 'svm'};
+[idx, ok] = listdlg('PromptString', 'Select Auto-Labeling Method:', ...
+                    'SelectionMode', 'single', ...
+                    'ListString', methods, ...
+                    'ListSize', [240 120]);
+if ~ok || isempty(idx)
+    return; % user cancelled
+end
+method = methods{idx};
 
-    % --- 2. Ask user to choose classification method ---
-    methods = {'psd', 'tree', 'cov', 'svm'};
-    [idx, ok] = listdlg('PromptString', 'Select Auto-Labeling Method:', ...
-                        'SelectionMode', 'single', ...
-                        'ListString', methods, ...
-                        'ListSize', [240 120]);
-    if ~ok || isempty(idx)
-        return; % user cancelled
-    end
-    method = methods{idx};
+% Prepare method-specific parameters 
+artifactTypes = getDefaultArtifactTypes(method);
+params = {};
 
-    % Prepare method-specific parameters 
-    artifactTypes = getDefaultArtifactTypes(method);
-    params = {};
-    thresholds = struct();
+switch lower(method)
+    case 'psd'
+        prompt = {'Enter PSD threshold (default: 0.01):'};
+        def = {'0.01'};
+        answ = inputdlg(prompt, 'PSD Parameters', [1 40], def);
+        if isempty(answ), return; end
+        params = {str2double(answ{1})};
 
-    switch lower(method)
-        case 'psd'
-            prompt = {'Enter PSD threshold (default: 0.01):'};
-            def = {'0.01'};
-            answ = inputdlg(prompt, 'PSD Parameters', [1 40], def);
-            if isempty(answ), return; end
-            params = {str2double(answ{1})};
+    case 'tree'
+        % no parameters required
+        msgbox('Decision tree classifier selected (no parameters required).', ...
+               'Tree Classifier', 'modal');
 
-        case 'tree'
-            % no parameters required
-            msgbox('Decision tree classifier selected (no parameters required).', ...
-                   'Tree Classifier', 'modal');
+    case 'cov'
+        prompt = {'Threshold (default: 1.2):', ...
+                  'Window length (0–1 s, default: 0.25):', ...
+                  'Aggregation proportion (0–1, default: 0.25):'};
+        def = {'1.2', '0.25', '0.25'};
+        answ = inputdlg(prompt, 'Covariance Parameters', [1 50], def);
+        if isempty(answ), return; end
+        params = {str2double(answ{1}), str2double(answ{2}), str2double(answ{3})};
 
-        case 'cov'
-            prompt = {'Threshold (default: 1.2):', ...
-                      'Window length (0–1 s, default: 0.25):', ...
-                      'Aggregation proportion (0–1, default: 0.25):'};
-            def = {'1.2', '0.25', '0.25'};
-            answ = inputdlg(prompt, 'Covariance Parameters', [1 50], def);
-            if isempty(answ), return; end
-            params = {str2double(answ{1}), str2double(answ{2}), str2double(answ{3})};
+    case 'svm'
+        % Prepare initial values from handles.thresholds (or defaults)
+        disp(handles.params)
+        initialVals = getArtifactThresholds(handles, artifactTypes, 0.5);
+        
+        % Show threshold GUI
+        [param, ok] = promptThresholdsGUI(artifactTypes, initialVals);
+        if ~ok
+            return;
+        end
+        params = {param};
+end
 
-        case 'svm'
-            % Prepare initial values from handles.thresholds (or defaults)
-            initialVals = getArtifactThresholds(handles, artifactTypes, 0.5);
-            
-            % Show threshold GUI
-            [result, ok] = promptThresholdsGUI(artifactTypes, initialVals);
-            if ~ok
-                fprintf('Threshold adjustment cancelled by user or GUI unavailable.\n');
-                return;
-            end
+% Set artifact types in GUI
+handles = syncArtifactTypes(handles, artifactTypes);
+guidata(handles.sigInspectMainWindow, handles);
 
-            % construct parameter struct
-            param = struct();
-            for i = 1:numel(artifactTypes)
-                thr = result.thresholds(i);
-                thresholds.(artifactTypes{i}) = thr;
-                param.(artifactTypes{i}) = struct('threshold', thr);
-            end
-            params = {param};
-    end
+%try
+    % sigInspectAutoLabel internally calls sigInspectClassify
+    [annotation, ~, params] = sigInspectAutoLabel(handles.interface, [], fs, method, params{:});
+    handles = applySvmMetadataToHandles(handles, method, params);
+    setAnnot(handles, annotation);
 
-    % Set artifact types in GUI
-    handles = syncArtifactTypes(handles, artifactTypes);
-    guidata(handles.sigInspectMainWindow, handles);
-
-    try
-        % sigInspectAutoLabel internally calls sigInspectClassify
-        [annotation, ~] = sigInspectAutoLabel(handles.interface, [], fs, method, params{:});
-        handles = applySvmMetadataToHandles(handles, method, thresholds);
-        setAnnot(handles, annotation);
-
-        msgbox(['Auto-labeling complete using "', upper(method), ...
-                '" method. Annotations updated.'], 'Success', 'modal');
-    catch ME
-        errordlg(['Auto-labeling failed: ' ME.message], 'Error', 'modal');
-    end
+    msgbox(['Auto-labeling complete using "', upper(method), ...
+            '" method. Annotations updated.'], 'Success', 'modal');
+% catch ME
+%     errordlg(['Auto-labeling failed: ' ME.message], 'Error', 'modal');
+% end
 
 
 
@@ -3277,13 +3235,13 @@ function autoLabelBtn_Callback(hObject, eventdata, handles)
 % -------------------------
 
 % Updates the handles structure with SVM-related metadata.
-function handles = applySvmMetadataToHandles(handles, method, thresholds)
+function handles = applySvmMetadataToHandles(handles, method, params)
     handles.method = method;
 
-    if ~isempty(thresholds)
-        handles.thresholds = thresholds;
+    if ~isempty(params)
+        handles.params = params;
     else
-        handles.thresholds = struct(); % keep empty struct if not provided
+        handles.params = struct(); % keep empty struct if not provided
     end
 
     % --- Update GUI visibility for thresholds ---
@@ -3311,12 +3269,11 @@ function handles = syncArtifactTypes(handles, newTypes)
 function vals = getArtifactThresholds(handles, artifactTypes, defaultValue)
     n = numel(artifactTypes);
     vals = defaultValue * ones(1, n);
-    if isfield(handles, 'thresholds')
-        disp(handles.thresholds)
+    if isfield(handles, 'params')
         for k = 1:n
             name = artifactTypes{k};
-            if isfield(handles.thresholds, name)
-                vals(k) = handles.thresholds.(name);
+            if isfield(handles.params, name)
+                vals(k) = handles.params.(name).threshold;
             end
         end
     end
@@ -3326,8 +3283,7 @@ function [result, ok] = promptThresholdsGUI(artifactTypes, initialVals)
     ok = false;
     result = [];
     if exist('svmThresholdGUI', 'file') == 2
-        result = svmThresholdGUI(initialVals, artifactTypes);
-        ok = ~isempty(result);
+        [result, ok] = svmThresholdGUI(initialVals, artifactTypes);
     else
         warndlg('Threshold GUI (svmThresholdGUI) not found.', 'UI Missing');
     end
@@ -3337,23 +3293,22 @@ function [result, ok] = promptThresholdsGUI(artifactTypes, initialVals)
 function [param, handles] = buildThresholdParams(handles, artifactTypes, guiResult)
     % guiResult is expected to have fields .include (logical) and .thresholds (numeric vector)
     param = struct();
-    if ~isfield(guiResult, 'include') || ~isfield(guiResult, 'thresholds')
-        error('Invalid threshold GUI result format.');
+    if isempty(guiResult) || ~isstruct(guiResult)
+        fprintf('No GUI results provided (user may have cancelled).\n');
+        return;
     end
 
-    selectedArtifacts = {};
     for k = 1:numel(artifactTypes)
-        if guiResult.include(k)
-            rawArtName = artifactTypes{k};
-            artName = genvarname(rawArtName);
-            param.(artName) = struct('threshold', guiResult.thresholds(k));
-            selectedArtifacts{end+1} = rawArtName;
-            % Update handles thresholds
-            if ~isfield(handles, 'thresholds')
-                handles.thresholds = struct();
-            end
-            handles.thresholds.(rawArtName) = guiResult.thresholds(k);
+        rawArtName = artifactTypes{k};
+        artName = genvarname(rawArtName);
+        param.(artName) = guiResult.(artName);
+
+        % Ensure consistent storage
+        if ~isfield(handles, 'params')
+            handles.params = struct();
         end
+
+        handles.params.(rawArtName) = guiResult.(artName); 
     end
 
 % Match artifact types between file and GUI (for 'Match' option)

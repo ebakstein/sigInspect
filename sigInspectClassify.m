@@ -61,21 +61,30 @@ Ns = ceil(N/fs);       % number of seconds
 switch(method)
     
     case {'psd','psdPrg'}
-        % classifier parameters
-        if(nargin>3 && isnumeric(varargin{1}))
-            % user-defined threshold value
-            psdThr = varargin{1};
-            if(psdThr<0 || psdThr > .03)
-                warning('recommended threshold range for psd method is between 0.005 and 0.02. The value provided (%.03f) may lead to unexpected results.',psdThr)
-            end                
+        % Default threshold values
+        if strcmpi(method,'psd')
+            psdThr = 0.01;   % trained on multi-center data
         else
-            % pre-trained threshold
-            if(strcmp(method,'psd'))            
-                psdThr = .01;   % threshold trained on the multi-center data
-            else            
-                psdThr = .0085; % threshold trained on the Prague data only 
-            end
+            psdThr = 0.0085; % trained on Prague data
         end
+
+        % If user passed a custom numeric threshold, override
+        if nargin > 3 && ~isempty(varargin) && isnumeric(varargin{1}) && isscalar(varargin{1})
+            psdThr = varargin{1};
+        elseif nargin > 3 && ~isempty(varargin) && ~(isnumeric(varargin{1}) && isempty(varargin{1}))
+            warning('Invalid PSD threshold argument. Using default value: %.3f', psdThr);
+        end
+
+        % Safety check (avoid non-scalar logic error)
+        if isnumeric(psdThr) && isscalar(psdThr)
+            if psdThr < 0 || psdThr > 0.03
+                warning('Recommended PSD threshold range is 0.005–0.02. Value %.3f may lead to unexpected results.', psdThr);
+            end
+        else
+            warning('PSD threshold was not a valid scalar. Using default value: %.3f', 0.01);
+            psdThr = 0.01;
+        end
+
         % features
         featNames={'maxNormPSD'}; % definition of dataset columns
         featComp = [1];           % features actually computet (for compatibility with dec. tree)        
@@ -102,28 +111,38 @@ switch(method)
         covThr = 1.2;
         winLength = .25;
         aggregPerc = winLength;
-        if(nargin > 4)
-            if(isnumeric(varargin{1}) && varargin{1} >= 1)
-                covThr = varargin{1};    
-            else
-                error('fourth parameter for COV method is threshold (numeric, greater or equal to 1)')
-            end
-        end          
-        if(nargin > 5)
-            if(isnumeric(varargin{2}) && varargin{2}>0 && varargin{2} <1)
-                winLength = varargin{2};    
-                aggregPerc = winLength; % default value for aggregPerc: windowLength
-            else
-                error('fifth parameter for COV method is win length (between 0-1 s)')
-            end
+
+        % Unwrap any cells that contain numeric values
+        if numel(varargin) == 1 && iscell(varargin{1}) && numel(varargin{1}) > 1
+            args = varargin{1};
+        else
+            args = varargin;
         end
-        if(nargin > 6)
-            if(isnumeric(varargin{3}) && varargin{3} <= 1 && varargin{3} > 0)
-                aggregPerc = varargin{3};    
-            else
-                error('sixth parameter for COV method is aggregation threshold (numeric, greater than 0, lower or equal to 1, multiple of winLength)')
-            end
-        end  
+        
+        % Unwrap each cell value safely
+        args = cellfun(@(x) unwrapCell(x), args, 'UniformOutput', false);
+
+        % Threshold (arg 1)
+        if numel(args) >= 1 && isnumeric(args{1}) && isscalar(args{1}) && args{1} >= 1
+            covThr = args{1};
+        elseif numel(args) >= 1 && ~isempty(args{1})
+            warning('Invalid COV threshold argument. Using default value: %.2f', covThr);
+        end
+
+        % Window length (arg 2)
+        if numel(args) >= 2 && isnumeric(args{2}) && isscalar(args{2}) && args{2} > 0 && args{2} < 1
+            winLength = args{2};
+        elseif numel(args) >= 2 && ~isempty(args{2})
+            warning('Invalid COV window length argument. Using default value: %.2f', winLength);
+        end
+
+        % Aggregation percentage (arg 3) 
+        if numel(args) >= 3 && isnumeric(args{3}) && isscalar(args{3}) && args{3} > 0 && args{3} <= 1
+            aggregPerc = args{3};
+        elseif numel(args) >= 3 && ~isempty(args{3})
+            warning('Invalid COV aggregation argument. Using default value: %.2f', aggregPerc);
+        end
+
     case 'svm'
         try
             classif = load('sigInspectSVMClassifiers.mat'); % load pre-trained classifiers
@@ -153,7 +172,6 @@ switch(method)
                 thresholds.(art) = 0.5;
             end
         end
-        
     
         % Collect unique relevant feature names
         featNames = {};
@@ -282,6 +300,15 @@ function featVals = getOrComputeFeatures(signal, signalId, method, featNames, fs
         save(cacheFile, '-struct', 'featuresCache', '-append');
     else
         save(cacheFile, '-struct', 'featuresCache');
+    end
+end
+
+function val = unwrapCell(x)
+    % unwrap { [value] } → value
+    if iscell(x)
+        val = x{1};
+    else
+        val = x;
     end
 end
 
