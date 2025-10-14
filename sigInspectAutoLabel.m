@@ -144,12 +144,11 @@ for ii=1:N
     % ensure curAn has 3 dimensions (Nch × Nsec × Nart)
     if size(curAn,3) > 1
         allAn(:,:,:) = curAn;
-        artSec = sum(any(any(curAn,3),2),1);
     else
         allAn(:,:,artifactAutoWhich) = curAn;
-        artSec = sum(any(curAn,3),2);
     end
     
+    artSec = sum(any(curAn,3),2);
     % annot summary
     fprintf(' > %s artifact seconds in channels \n',sprintf('%d,',artSec))
     
