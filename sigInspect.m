@@ -3199,7 +3199,6 @@ switch lower(method)
 
     case 'svm'
         % Prepare initial values from handles.thresholds (or defaults)
-        disp(handles.params)
         initialVals = getArtifactThresholds(handles, artifactTypes, 0.5);
         
         % Show threshold GUI

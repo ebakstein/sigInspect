@@ -108,7 +108,7 @@ classdef sigInspectDataBasic < sigInspectDataInterface
             end
 
             tmp=load(filePath);
-            chckNames={'signal','data','signals'}; % variable names to be checked
+            chckNames={'signal','data','signals', 'd'}; % variable names to be checked
             fnd=0;
             % check possible names of data/signals variable
             for ci=1:length(chckNames)
@@ -134,7 +134,7 @@ classdef sigInspectDataBasic < sigInspectDataInterface
                 end
             end
             if(~fnd)
-                error('No signals variable (data, signal or signals) could be found in the file %s',filePath)
+                error('No signals variable (data, d, signal or signals) could be found in the file %s',filePath)
             end
         end
                                                                         
