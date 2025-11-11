@@ -58,6 +58,7 @@ function [featVals, featNames] = sigInspectComputeFeatures(segment, featNames, s
     segment = trimTrailNans(segment);
     %N = size(segment,2);
     % subtract DC component
+    segment = double(segment); 
     segment = segment - mean(segment, 2, 'omitnan'); %repmat(nanmean(segment,2),1,N);
     
     % Compute raw features

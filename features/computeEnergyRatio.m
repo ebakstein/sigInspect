@@ -1,15 +1,19 @@
 function energyRatio = computeEnergyRatio(signal, fs, spikeBand)
-    % Computes the energy ratio in a specified spike band relative to total power
     if nargin < 3
-        spikeBand = [300 3000]; % Default spike band if not provided
+        spikeBand = [300 3000];
     end
 
-    % Compute power in the spike band
-    spikePower = bandpower(signal, fs, spikeBand);  
-    % Compute total power of the signal
-    totalPower = bandpower(signal, fs, [0 fs/2]); 
+    % Always ensure single-channel vector
+    signal = signal(:);
 
-    % Prevent division by zero
+    % Compute PSD (periodogram returns single-sided by default)
+    [Pxx, F] = periodogram(signal, [], [], fs);
+
+    % Compute power from PSD directly (F and Pxx are aligned)
+    spikePower = bandpower(Pxx, F, spikeBand, 'psd');
+    totalPower = bandpower(Pxx, F, 'psd');
+
+    % Avoid division by zero
     if totalPower == 0
         energyRatio = 0;
     else
