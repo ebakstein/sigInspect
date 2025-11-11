@@ -150,10 +150,14 @@ switch(method)
         catch err        
             error('could not load precalculated classifiers: search sigInspect root for the file sigInspectSVMClassifiers.mat (necessary for the svm classifiers)')
         end
-        if nargin < 4
-            error('you must provide a parameter struct specifying artifact types.');
+        if nargin >= 5 && ~isempty(varargin)
+            param = varargin{1};
+        else
+            param = struct( ...
+                'POW', struct(), ...
+                'BASE', struct(), ...
+                'FREQ', struct()); 
         end
-        param = varargin{1};
 
         % Extract artifact types from user's input struct (fields of param)
         artifactTypes = intersect(fieldnames(param), fieldnames(classif));  % make sure it's valid
@@ -275,18 +279,30 @@ function featVals = getOrComputeFeatures(signal, signalId, method, featNames, fs
         end
     end
 
+    % Compute expected dimensions
+    Nch = size(signal, 1);
+    N = size(signal, 2);
+    Ns = ceil(N / fs);
+    Nfeat = numel(featNames);
+    expectedSize = [Nch * Ns, Nfeat];
+
     % Check if features already cached
     if isfield(featuresCache, signalIdField) && isfield(featuresCache.(signalIdField), methodField)
         featVals = featuresCache.(signalIdField).(methodField);
-        return;
+
+        % Verify cached size
+        if isequal(size(featVals), expectedSize)
+            disp(['Using cached features for ', signalIdField, ' (', method, ')']);
+            return;
+        else
+            warning(['Cached features for ', signalIdField, ' (', method, ...
+                ') have mismatched size. Expected [', num2str(expectedSize), ...
+                '], got [', num2str(size(featVals)), ']. Recomputing...']);
+        end
     end
 
     % Compute features
-    Nch = size(signal,1);
-    N = size(signal,2);
-    Ns = ceil(N/fs);
-    Nfeat = length(featNames);
-    featVals = nan(Nch*Ns, Nfeat);
+    featVals = nan(expectedSize);
     for si = 1:Ns
         inds = (si-1)*fs+1 : min(si*fs, N);
         fv = sigInspectComputeFeatures(signal(:,inds), featNames, fs);
