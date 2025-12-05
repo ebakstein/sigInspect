@@ -198,7 +198,10 @@ end
 % downsample to 1s (annotation)
 annot=false(Nsec,1);
 for seci=1:Nsec
-    segInds=1+(seci-1)*fs:seci*fs;
+    startIdx = 1 + (seci-1)*fs;
+    endIdx   = min(seci*fs, N);      % prevent out-of-range indexing
+    segInds = startIdx:endIdx;
+    %segInds=1+(seci-1)*fs:seci*fs;
     annot(seci)=mean(boolsegment(segInds))>=winAggregPerc; % if at least 20% of the segment is present, mark it! (does not make much difference due to .5s windows)
 end
 

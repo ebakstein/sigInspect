@@ -264,20 +264,20 @@ function featVals = getOrComputeFeatures(signal, signalId, method, featNames, fs
 
     % Try to load cache
     featuresCache = struct();
-    if exist(cacheFile, 'file')
-        S = load(cacheFile);
-        % If the file contains a featuresCache struct, unwrap it to top-level fields
-        if isfield(S, 'featuresCache')
-            % Unwrap: assign each field of featuresCache to the workspace struct
-            fcFields = fieldnames(S.featuresCache);
-            for k = 1:numel(fcFields)
-                featuresCache.(fcFields{k}) = S.featuresCache.(fcFields{k});
-            end
-        else
-            % Already top-level signalId fields
-            featuresCache = S;
-        end
-    end
+    % if exist(cacheFile, 'file')
+    %     S = load(cacheFile);
+    %     % If the file contains a featuresCache struct, unwrap it to top-level fields
+    %     if isfield(S, 'featuresCache')
+    %         % Unwrap: assign each field of featuresCache to the workspace struct
+    %         fcFields = fieldnames(S.featuresCache);
+    %         for k = 1:numel(fcFields)
+    %             featuresCache.(fcFields{k}) = S.featuresCache.(fcFields{k});
+    %         end
+    %     else
+    %         % Already top-level signalId fields
+    %         featuresCache = S;
+    %     end
+    % end
 
     % Compute expected dimensions
     Nch = size(signal, 1);

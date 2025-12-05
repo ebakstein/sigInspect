@@ -1,4 +1,4 @@
-function loadedSignals = classifyLoadedSignals(loadedSignals, method, varargin)
+function [loadedSignals, classifErrors] = classifyLoadedSignals(loadedSignals, method, varargin)
 % Runs artifact classification on all signals in loadedSignals
 % and adds results into each signal structure.
 %
@@ -10,18 +10,30 @@ function loadedSignals = classifyLoadedSignals(loadedSignals, method, varargin)
 % Output:
 %   loadedSignals - same struct with new field .classif.(method)
 
+classifErrors = struct();
 signalNames = fieldnames(loadedSignals);
 
 fprintf('Starting classification of %d signals using method "%s"...\n', numel(signalNames), method);
 
-for i = 1:numel(signalNames)
+for i = 1:20%numel(signalNames)
     sigName = signalNames{i};
     sigData = loadedSignals.(sigName);
 
     if ~isfield(sigData, 'data') || isempty(sigData.data)
-        warning('Skipping %s — no signal data.', sigName);
-        continue;
+        msg = 'No signal data.';
+        warning('Skipping %s — %s', sigName, msg);
+        classifErrors.(method).(sigName) = msg;
     end
+
+
+    % % Skip if already computed
+    % if isfield(sigData, 'classif') && ...
+    %    isfield(sigData.classif, method) && ...
+    %    isfield(sigData.classif.(method), 'annot')
+    % 
+    %     fprintf('Annotation known for %s, skipping\n', sigName);
+    %     continue;
+    % end
 
     fs = sigData.samplingFreq;
     signal = sigData.data;
@@ -36,7 +48,9 @@ for i = 1:numel(signalNames)
         loadedSignals.(sigName).classif.(method).annot = annot;
         fprintf('✓ Classified %s\n', sigName);
     catch ME
-        warning('❌ Failed classification for %s: %s', sigName, ME.message);
+        msg = ME.message;
+        warning('❌ Failed classification for %s: %s', sigName, msg);
+        classifErrors.(method).(sigName) = msg;
     end
 end
 

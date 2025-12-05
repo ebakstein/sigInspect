@@ -72,24 +72,6 @@ for i = 1:numSignals
         end
     end
 
-    % Compute samples per 1-second window
-    samplesPerWin = round(fs); % since fs is Hz
-    totalSamples = size(signalMatrix, 2);
-    fullWindows = round(double(totalSamples) / double(samplesPerWin));
-    keepSamples = fullWindows * samplesPerWin;
-
-    % Trim incomplete last window if there is less then half samples in the
-    % window
-    if keepSamples < totalSamples
-        signalMatrix = signalMatrix(:, 1:keepSamples);
-        artifactsMatrix = artifactsMatrix(:, 1:fullWindows);
-        percTrimmed = 100.0 * (double(totalSamples-keepSamples) / double(totalSamples));
-        fprintf('Trimmed last incomplete window for %s (%.6f%% of data removed).\n', ...
-            sigId, percTrimmed);
-        meta.Nsamples = keepSamples;
-
-    end
-
     % --- Store results ---
     for ch = 1:size(signalMatrix, 1)
         chName = matlab.lang.makeValidName(sprintf('sig_%s_ch%d', sigId, ch));

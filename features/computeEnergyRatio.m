@@ -3,15 +3,12 @@ function energyRatio = computeEnergyRatio(signal, fs, spikeBand)
         spikeBand = [300 3000];
     end
 
-    % Always ensure single-channel vector
     signal = signal(:);
+    N = length(signal);
 
-    % Compute PSD (periodogram returns single-sided by default)
-    [Pxx, F] = periodogram(signal, [], [], fs);
-
-    % Compute power from PSD directly (F and Pxx are aligned)
-    spikePower = bandpower(Pxx, F, spikeBand, 'psd');
-    totalPower = bandpower(Pxx, F, 'psd');
+    % Compute band power
+    spikePower = bandpower(signal, fs, spikeBand);
+    totalPower = bandpower(signal, fs, [0 min(fs/2, (N - 1) * fs/(2 * N))]);
 
     % Avoid division by zero
     if totalPower == 0
