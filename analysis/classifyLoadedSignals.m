@@ -15,7 +15,7 @@ signalNames = fieldnames(loadedSignals);
 
 fprintf('Starting classification of %d signals using method "%s"...\n', numel(signalNames), method);
 
-for i = 1:20%numel(signalNames)
+for i = 1:numel(signalNames)
     sigName = signalNames{i};
     sigData = loadedSignals.(sigName);
 
@@ -44,8 +44,13 @@ for i = 1:20%numel(signalNames)
     if ~isa(fs,'double'), fs = double(fs); end
 
     try
-        annot = sigInspectClassify(signal, signalId, fs, method, varargin{:});
+        [annot, featVals, scores] = sigInspectClassify(signal, signalId, fs, method, varargin{:});
         loadedSignals.(sigName).classif.(method).annot = annot;
+        loadedSignals.(sigName).classif.(method).featVals = featVals;
+        % Only save scores if they are not empty (primarily for SVM)
+        if ~isempty(scores)
+            loadedSignals.(sigName).classif.(method).scores = scores;
+        end
         fprintf('✓ Classified %s\n', sigName);
     catch ME
         msg = ME.message;

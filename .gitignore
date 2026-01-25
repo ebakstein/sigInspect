@@ -15,6 +15,6 @@ sigInspectAutoAnnotation*
 *.png
 /DAO
 /tests
-/data
+data*/
 /manual
 /outputs

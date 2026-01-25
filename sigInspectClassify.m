@@ -1,4 +1,4 @@
-function annot = sigInspectClassify(signal, signalId, fs, method, varargin)
+function [annot, featVals, scores] = sigInspectClassify(signal, signalId, fs, method, varargin)
 % function annot = sigInspectClassify(signal,varargin)
 % classify artifacts in each second of provided micro-EEG signal
 % 
@@ -52,7 +52,8 @@ if(length(signal)<fs)
 end
 
 [Nch,N] = size(signal); % number of channels + samples
-Ns = ceil(N/fs);       % number of seconds
+Ns = ceil(N/fs);        % number of seconds
+scores = [];            % Initialize scores (primarly for SVM)
 
 
 % ---- CLASSIFIER PARAMETERS ----
@@ -225,7 +226,7 @@ switch(method)
         artifactTypes = fieldnames(param);  % Update artifact types from param keys
         Nartif = length(artifactTypes);
         annot = false(Nch, Ns, Nartif);
-        scores = zeros(Nch*Ns, Nartif);  % soft outputs
+        scores = zeros(Nch, Ns, Nartif);
         for i = 1:Nartif
             art = artifactTypes{i};
             featureSet = classif.(art).featNames;  % features for this artifact
@@ -243,10 +244,11 @@ switch(method)
 
             % Predict using trained SVM – get scores (posterior probabilities)
             [~, score] = predict(model, X);  % score is N x 2, we take the 2nd column (class == 1)
-            scores(:, i) = score(:, 2);  % probability of being artifact
+            probArt = score(:, 2);  % probability of being artifact
 
             % Apply threshold to convert to binary
-            annot(:,:,i) = reshape(scores(:, i) > thresholds.(art), Nch, Ns);
+            scores(:,:,i) = reshape(probArt, Nch, Ns);
+            annot(:,:,i) = scores(:,:,i) > thresholds.(art);
         end
 end
 
@@ -264,6 +266,7 @@ function featVals = getOrComputeFeatures(signal, signalId, method, featNames, fs
 
     % Try to load cache
     featuresCache = struct();
+    % TODO
     % if exist(cacheFile, 'file')
     %     S = load(cacheFile);
     %     % If the file contains a featuresCache struct, unwrap it to top-level fields
@@ -287,19 +290,19 @@ function featVals = getOrComputeFeatures(signal, signalId, method, featNames, fs
     expectedSize = [Nch * Ns, Nfeat];
 
     % Check if features already cached
-    if isfield(featuresCache, signalIdField) && isfield(featuresCache.(signalIdField), methodField)
-        featVals = featuresCache.(signalIdField).(methodField);
-
-        % Verify cached size
-        if isequal(size(featVals), expectedSize)
-            disp(['Using cached features for ', signalIdField, ' (', method, ')']);
-            return;
-        else
-            warning(['Cached features for ', signalIdField, ' (', method, ...
-                ') have mismatched size. Expected [', num2str(expectedSize), ...
-                '], got [', num2str(size(featVals)), ']. Recomputing...']);
-        end
-    end
+    % if isfield(featuresCache, signalIdField) && isfield(featuresCache.(signalIdField), methodField)
+    %     featVals = featuresCache.(signalIdField).(methodField);
+    % 
+    %     % Verify cached size
+    %     if isequal(size(featVals), expectedSize)
+    %         disp(['Using cached features for ', signalIdField, ' (', method, ')']);
+    %         return;
+    %     else
+    %         warning(['Cached features for ', signalIdField, ' (', method, ...
+    %             ') have mismatched size. Expected [', num2str(expectedSize), ...
+    %             '], got [', num2str(size(featVals)), ']. Recomputing...']);
+    %     end
+    % end
 
     % Compute features
     featVals = nan(expectedSize);
@@ -311,12 +314,12 @@ function featVals = getOrComputeFeatures(signal, signalId, method, featNames, fs
     end
 
     % Save to cache (append or create) as top-level signalId fields
-    featuresCache.(signalIdField).(methodField) = featVals;
-    if exist(cacheFile, 'file')
-        save(cacheFile, '-struct', 'featuresCache', '-append');
-    else
-        save(cacheFile, '-struct', 'featuresCache');
-    end
+    % featuresCache.(signalIdField).(methodField) = featVals;
+    % if exist(cacheFile, 'file')
+    %     save(cacheFile, '-struct', 'featuresCache', '-append');
+    % else
+    %     save(cacheFile, '-struct', 'featuresCache');
+    % end
 end
 
 function val = unwrapCell(x)

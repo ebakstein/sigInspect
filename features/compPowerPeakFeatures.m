@@ -9,10 +9,15 @@ function [numPeaks, meanPeakHeight, peakFreq, peakRMSRatio, avgPeakWidth] = comp
     gaussKernel = gausswin(windowSize);
     gaussKernel = gaussKernel(:) / sum(gaussKernel);  % column vector
 
-    % Convolution (vectorized with padding)
-    padLen = floor(length(gaussKernel) / 2);
-    smoothSignal = conv2(powerSignal, gaussKernel', 'same');
-
+    if numSamples < 3 * windowSize
+        % Signal too short for filtfilt, fall back to conv2 (same as V1 fallback)
+        smoothSignal = conv2(powerSignal, gaussKernel', 'same');
+    else
+        % Use filtfilt on transposed signal (Time x Channels) to match V1
+        % We transpose powerSignal so filtfilt works along the time dimension (columns)
+        smoothSignal = filtfilt(gaussKernel, 1, powerSignal')'; 
+    end
+    
     % Initialize outputs
     numPeaks        = zeros(numChannels, 1);
     meanPeakHeight  = zeros(numChannels, 1);
