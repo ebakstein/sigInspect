@@ -42,12 +42,6 @@ cfg.proc.NaNRemovalMethod = 'signal'; % Options: 'signal', 'window', or '' (how 
 cfg.params.psdThr    = 0.012;
 cfg.params.covParams = {1.2, 0.25, 0.25}; % [threshold, winLength, aggregPerc]
 
-%%
-cfg.params.psdThr    = 0.01;
-fprintf('>>> Running PSD (%f)...\n', cfg.params.psdThr);
-[signals, ~] = classifyLoadedSignals(signals, 'psd', cfg.params.psdThr);
-
-
 %% MAIN EXECUTION LOGIC
 % At first loading data -> creating mat file from Prague and from CZSK
 % folder separately -> then merging and classifying unprocessed ->
